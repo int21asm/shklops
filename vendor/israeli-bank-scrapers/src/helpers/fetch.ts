@@ -139,9 +139,9 @@ export async function fetchPostWithinPage<TResult>(
     }
   } catch (e) {
     if (!ignoreErrors) {
-      throw new Error(
-        `fetchPostWithinPage parse error: ${e instanceof Error ? `${e.message}\n${e.stack}` : String(e)}, url: ${url}, data: ${JSON.stringify(data)}, extraHeaders: ${JSON.stringify(extraHeaders)}, result: ${resultText}`,
-      );
+      // The POST body can contain login passwords and headers can contain tokens.
+      // Neither those values nor the response body belong in an error message.
+      throw new Error(`fetchPostWithinPage returned invalid JSON (status: ${status})`);
     }
   }
   return null;

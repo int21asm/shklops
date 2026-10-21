@@ -1,6 +1,6 @@
 # Pinned scraper source
 
-`israeli-bank-scrapers/` contains the tracked source files from:
+`israeli-bank-scrapers/` is based on the tracked source files from:
 
 - Repository: https://github.com/int21asm/israeli-bank-scrapers
 - Commit: `5170a65ffaf8df2d22f32b0fa1656350a8337590`
@@ -22,5 +22,6 @@ they contain Git reset operations. Use its ordinary install and build commands.
 The web adapter adds a Mizrahi balance fallback in `server/mizrahi-balance.js`.
 It wraps this pinned version's `fetchAccount` and `getPendingTransactions` methods
 to read the current-account header or latest ledger balance before navigation.
-The vendor source stays unchanged; verify these method contracts and the balance
-tests when updating the pinned library.
+The vendored source also removes credentials, authorization headers, and response
+bodies from POST parse-error messages in `src/helpers/fetch.ts`. Verify this
+hardening and the Mizrahi method contracts when updating the pinned library.
