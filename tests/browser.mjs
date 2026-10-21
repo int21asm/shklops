@@ -1,0 +1,728 @@
+import { chromium } from "playwright";
+import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { readMizrahiBalance } from "../server/mizrahi-balance.js";
+import { formatMoney } from "../shared/currency.js";
+
+const url = process.env.TEST_URL || "http://localhost:3002";
+mkdirSync("test-results", { recursive: true });
+const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+  args: ["--no-sandbox"],
+});
+const errors = [];
+try {
+  const context = await browser.newContext({
+    timezoneId: "Asia/Jerusalem",
+    viewport: { width: 1440, height: 1100 },
+    acceptDownloads: true,
+  });
+  const page = await context.newPage();
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(url);
+  assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
+  await page
+    .getByRole("button", { name: "כניסה להדגמה עם נתונים לדוגמה" })
+    .click();
+  await page.getByRole("heading", { name: "הכסף שלכם, בתמונה אחת." }).waitFor();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll(".recent-transactions tbody tr").length === 10,
+  );
+  const bankRecent = page.getByRole("region", {
+    name: "התנועות האחרונות בבנק",
+    exact: true,
+  });
+  const cardRecent = page.getByRole("region", {
+    name: "התנועות האחרונות בכרטיסי האשראי",
+    exact: true,
+  });
+  assert.equal(await bankRecent.locator("tbody tr").count(), 5);
+  assert.equal(await cardRecent.locator("tbody tr").count(), 5);
+  assert.ok(
+    (await bankRecent.locator("tbody").textContent()).includes("בנק הפועלים"),
+  );
+  assert.ok(!(await bankRecent.locator("tbody").textContent()).includes("max"));
+  assert.ok((await cardRecent.locator("tbody").textContent()).includes("max"));
+  assert.ok(
+    !(await cardRecent.locator("tbody").textContent()).includes("בנק הפועלים"),
+  );
+  await bankRecent.getByRole("button", { name: "לכל תנועות הבנק" }).click();
+  assert.equal(await page.getByRole("tab", { name: "תנועות בנק" }).getAttribute("aria-selected"), "true");
+  assert.ok(!(await page.locator("tbody").textContent()).includes("max"));
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "סקירה כללית", exact: true })
+    .click();
+  await cardRecent.getByRole("button", { name: "לכל תנועות האשראי" }).click();
+  assert.equal(await page.getByRole("tab", { name: "תנועות אשראי" }).getAttribute("aria-selected"), "true");
+  assert.ok(
+    !(await page.locator("tbody").textContent()).includes("בנק הפועלים"),
+  );
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "סקירה כללית", exact: true })
+    .click();
+  console.log(
+    "PASS: separate bank/card recent panels and scoped view-all navigation",
+  );
+  await page.waitForTimeout(750);
+  await page.screenshot({
+    path: "test-results/dashboard-desktop.png",
+    fullPage: true,
+  });
+  console.log("PASS: Hebrew dashboard, persisted demo data and charts");
+
+  await page.locator("nav").getByRole("button", { name: "הגדרות" }).click();
+  await page.getByLabel("טווח סנכרון").selectOption("30");
+  await page.getByRole("switch", { name: "איחוד עסקאות בתשלומים" }).click();
+  await page.getByRole("button", { name: "שמירת שינויים" }).click();
+  await page.getByRole("status").filter({ hasText: "ההעדפות נשמרו" }).waitFor();
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: "הגדרות" }).click();
+  assert.equal(await page.getByLabel("טווח סנכרון").inputValue(), "30");
+  assert.equal(
+    await page.getByRole("switch").getAttribute("aria-checked"),
+    "true",
+  );
+  await page.screenshot({
+    path: "test-results/settings-desktop.png",
+    fullPage: true,
+  });
+  console.log(
+    "PASS: sync preferences persist through reload and session restoration",
+  );
+
+  await page
+    .locator("nav")
+    .getByRole("button", { name: /חשבונות וכרטיסים/ })
+    .click();
+  await page
+    .getByRole("button", { name: "חיבור חשבון חדש", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("בנק או חברת אשראי").selectOption("leumi");
+  await dialog.getByLabel("שם החיבור").fill("חשבון נוסף לבדיקה");
+  await dialog.getByRole("button", { name: "הוספת חשבון" }).click();
+  await page.getByText("חשבון נוסף לבדיקה", { exact: true }).waitFor();
+  console.log("PASS: connection creation");
+
+  await page
+    .getByRole("button", {
+      name: "סנכרון חשבון משותף · הדגמת אימות",
+      exact: true,
+    })
+    .click();
+  await page.getByRole("heading", { name: "רק מוודאים שזה אתם" }).waitFor();
+  const mfa = page.getByRole("dialog");
+  await page.screenshot({
+    path: "test-results/mfa-desktop.png",
+    fullPage: true,
+  });
+  await mfa.getByLabel("קוד אימות חד־פעמי").fill("123456");
+  await mfa.getByRole("button", { name: "אימות והמשך סנכרון" }).click();
+  await mfa.waitFor({ state: "detached" });
+  await page.waitForFunction(async () => {
+    const j = await (await fetch("/api/jobs")).json();
+    return j.some((x) => x.status === "completed");
+  });
+  const data = await page.evaluate(
+    async () => await (await fetch("/api/data")).json(),
+  );
+  const oneZero = data.connections.find((c) => c.provider === "oneZero");
+  assert.ok(data.accounts.some((a) => a.connection_id === oneZero.id));
+  assert.ok(data.transactions.some((t) => t.connection_id === oneZero.id));
+  console.log(
+    "PASS: MFA dialog resumes server job and saves returned transactions",
+  );
+
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "תנועות", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "תנועות אשראי" }).click();
+  await page.getByLabel("חיפוש תנועות").fill("Wolt");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll("tbody tr")].every((r) =>
+      r.textContent.includes("Wolt"),
+    ),
+  );
+  assert.ok((await page.locator("tbody tr").count()) > 0);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "ייצוא CSV" }).click();
+  const download = await downloadPromise;
+  const stream = await download.createReadStream();
+  let csv = "";
+  for await (const chunk of stream) csv += chunk.toString();
+  assert.ok(csv.includes("Wolt"));
+  assert.ok(!csv.includes("Netflix"));
+  await page.getByLabel("חיפוש תנועות").fill("nothing-matches-this-query");
+  await page.getByRole("heading", { name: "לא נמצאו תנועות תואמות" }).waitFor();
+  await page.getByLabel("חיפוש תנועות").fill("");
+  await page.screenshot({
+    path: "test-results/transactions-desktop.png",
+    fullPage: true,
+  });
+  console.log(
+    "PASS: transaction filtering, empty state and filtered CSV download",
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "פתיחת תפריט", exact: true }).click();
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "סקירה כללית", exact: true })
+    .click();
+  await page.waitForTimeout(700);
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    "Mobile viewport has horizontal overflow",
+  );
+  await page.screenshot({
+    path: "test-results/dashboard-mobile.png",
+    fullPage: true,
+  });
+  console.log("PASS: responsive dashboard and mobile navigation");
+  const isolated = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  const login = await isolated.newPage();
+  login.on("pageerror", (error) => errors.push(error.message));
+  await login.goto(url);
+  await login.getByRole("button", { name: "חשבון חדש", exact: true }).click();
+  await login.getByLabel("איך קוראים לכם?").fill("בדיקת משתמש נפרד");
+  const email = `browser-${Date.now()}@example.com`;
+  await login.getByLabel("כתובת אימייל").fill(email);
+  await login
+    .getByLabel("סיסמה", { exact: true })
+    .fill("browser-test-password-2026");
+  await login.getByRole("button", { name: "יצירת חשבון", exact: true }).click();
+  await login.getByRole("heading", { name: "אין תנועות בנק עדיין" }).waitFor();
+  const isolatedData = await login.evaluate(
+    async () => await (await fetch("/api/data")).json(),
+  );
+  assert.equal(isolatedData.transactions.length, 0);
+  assert.equal(isolatedData.connections.length, 0);
+  await login
+    .getByRole("button", { name: "יציאה מהחשבון", exact: true })
+    .click();
+  await login.getByLabel("כתובת אימייל").fill(email);
+  await login
+    .getByLabel("סיסמה", { exact: true })
+    .fill("browser-test-password-2026");
+  await login
+    .getByRole("button", { name: "כניסה לחשבון", exact: true })
+    .click();
+  await login.getByRole("heading", { name: "אין תנועות בנק עדיין" }).waitFor();
+  console.log(
+    "PASS: registration, isolated empty account, logout and password login",
+  );
+  const session = await login.evaluate(
+    async () => await (await fetch("/api/session")).json(),
+  );
+  if (session.liveEnabled) {
+    await login
+      .locator("nav")
+      .getByRole("button", { name: /חשבונות וכרטיסים/ })
+      .click();
+    await login
+      .getByRole("button", { name: "חיבור חשבון חדש", exact: true })
+      .click();
+    const connectionForm = login.getByRole("dialog");
+    await connectionForm.getByLabel("בנק או חברת אשראי").selectOption("leumi");
+    await connectionForm
+      .getByLabel("שם החיבור")
+      .fill("בדיקת חיבור ללא כניסה לבנק");
+    await connectionForm.getByRole("checkbox").check();
+    assert.equal(
+      await connectionForm.locator('input[name="password"]').count(),
+      1,
+    );
+    await connectionForm.getByRole("checkbox").uncheck();
+    await connectionForm.getByRole("button", { name: "הוספת חשבון" }).click();
+    await login
+      .getByRole("button", {
+        name: "סנכרון בדיקת חיבור ללא כניסה לבנק",
+        exact: true,
+      })
+      .click();
+    const credentialsForm = login.getByRole("dialog");
+    await credentialsForm
+      .getByRole("heading", { name: "התחברות לבנק לאומי" })
+      .waitFor();
+    assert.equal(
+      await credentialsForm.locator('input[name="password"]').count(),
+      1,
+    );
+    await credentialsForm
+      .getByRole("button", { name: "סגירה", exact: true })
+      .click();
+    const jobs = await login.evaluate(
+      async () => await (await fetch("/api/jobs")).json(),
+    );
+    assert.deepEqual(
+      jobs,
+      [],
+      "Checking credentials UI must not start a bank job",
+    );
+    console.log(
+      "PASS: personal live connection creation and credential forms without contacting a bank",
+    );
+  }
+  await isolated.close();
+  // Override only synthetic demo responses; never edit stored financial data.
+  const fixture = await page.evaluate(
+    async () => await (await fetch("/api/data")).json(),
+  );
+  fixture.connections.push({
+    id: "synthetic-isracard-failure",
+    provider: "isracard",
+    name: "כרטיס לבדיקה",
+    synced_at: null,
+    status: "failed",
+    remembered: false,
+  });
+  fixture.runs.unshift({
+    id: "synthetic-isracard-run",
+    connection_id: "synthetic-isracard-failure",
+    status: "failed",
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    count: 0,
+    error: "הבנק דורש שינוי סיסמה. יש להיכנס לאתר הבנק.",
+  });
+  await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
+  await page.reload();
+  const failure = page.locator(".sync-failure");
+  await failure.getByText("הסנכרון של ישראכרט נכשל").waitFor();
+  assert.match(await failure.textContent(), /לא יובאו נתונים/);
+  await failure.getByRole("button", { name: /לחשבון ולניסיון חוזר/ }).click();
+  const failedCard = page.locator(".connection-card").filter({ hasText: "כרטיס לבדיקה" });
+  assert.match(await failedCard.textContent(), /הסנכרון נכשל/);
+  assert.match(await failedCard.textContent(), /אתר ישראכרט ביקש שינוי סיסמה/);
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  fixture.connections.pop();
+  fixture.runs.shift();
+  console.log("PASS: failed Isracard sync explains the missing card on dashboard and account card");
+  fixture.accounts = fixture.accounts.map((a) => ({ ...a, balance: null }));
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.reload();
+  const balancePanel = page.locator(".stat.featured");
+  await balancePanel.getByText("הבנק לא החזיר יתרה בסנכרון האחרון").waitFor();
+  assert.equal(await balancePanel.locator(".stat-value").textContent(), "—");
+  fixture.accounts.find((a) => a.provider === "max").balance = -9999999;
+  await page.reload();
+  await balancePanel.getByText("הבנק לא החזיר יתרה בסנכרון האחרון").waitFor();
+  assert.equal(await balancePanel.locator(".stat-value").textContent(), "—");
+  fixture.accounts.find((a) => a.currency === "ILS").balance = 0;
+  await page.reload();
+  await balancePanel.getByText("יתרה חלקית · שקלים").waitFor();
+  assert.match(await balancePanel.locator(".stat-value").textContent(), /0/);
+  assert.ok((await balancePanel.textContent()).includes("יתרה חסרה"));
+  fixture.accounts.find((a) => a.provider === "hapoalim").balance = 10000;
+  fixture.accounts.find((a) => a.provider === "oneZero").balance = 20000;
+  await page.reload();
+  await balancePanel.getByText("2 חשבונות בנק עם יתרה").waitFor();
+  assert.match(await balancePanel.locator(".stat-value").textContent(), /300/);
+  console.log(
+    "PASS: bank balance and account count exclude card debt, including when bank balances are missing",
+  );
+  fixture.accounts = fixture.accounts.map((a) => ({ ...a, currency: "USD" }));
+  await page.reload();
+  await balancePanel.getByText("לא סונכרנו חשבונות בשקלים").waitFor();
+  assert.equal(await balancePanel.locator(".stat-value").textContent(), "—");
+  console.log(
+    "PASS: unavailable, partial, genuine zero, and foreign-currency balances are distinguished",
+  );
+  fixture.transactions[0].currency = "₪";
+  fixture.transactions[1].currency = "19";
+  await page.reload();
+  await page.locator("tbody tr").first().waitFor();
+  assert.ok(await page.locator("#root").textContent());
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "תנועות", exact: true })
+    .click();
+  await page.locator("tbody tr").first().waitFor();
+  assert.ok(await page.locator("tbody").textContent());
+  console.log(
+    "PASS: card currency symbols and unknown units do not blank the dashboard or transactions page",
+  );
+  fixture.transactions = [
+    {
+      ...fixture.transactions[0],
+      date: "2026-10-01",
+      amount: 10000,
+      currency: "ILS",
+      provider: "hapoalim",
+    },
+  ];
+  await page.clock.install({ time: new Date("2026-09-30T21:30:00Z") });
+  await page.reload();
+  await page
+    .locator(".stat")
+    .filter({ hasText: "הכנסות בתקופה" })
+    .getByText("1 תנועות זכות")
+    .waitFor();
+  assert.match(
+    await page
+      .locator(".stat")
+      .filter({ hasText: "הכנסות בתקופה" })
+      .locator(".stat-value")
+      .textContent(),
+    /100/,
+  );
+  await page
+    .locator(".bar-group.current .bar-pair")
+    .getAttribute("aria-label")
+    .then((label) => assert.ok(label.includes("100")));
+  await page.unroute("**/api/data");
+  console.log(
+    "PASS: October 1 income remains in October at midnight in Israel",
+  );
+  const bankCredit = fixture.transactions[0];
+  const cardPurchase = {
+    ...bankCredit,
+    id: "synthetic-card-purchase",
+    provider: "max",
+    amount: -900000,
+  };
+  const cardRefund = {
+    ...bankCredit,
+    id: "synthetic-card-refund",
+    provider: "max",
+    amount: 500000,
+  };
+  fixture.transactions = [
+    bankCredit,
+    { ...bankCredit, id: "synthetic-bank-debit", amount: -2500 },
+    {
+      ...bankCredit,
+      id: "synthetic-bank-usd",
+      amount: -777777,
+      currency: "USD",
+    },
+    cardPurchase,
+    cardRefund,
+  ];
+  await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
+  await page.reload();
+  await page
+    .locator(".stat")
+    .filter({ hasText: "הכנסות בתקופה" })
+    .getByText("1 תנועות זכות")
+    .waitFor();
+  for (const [title, expected] of [
+    ["הכנסות בתקופה", 10000],
+    ["הוצאות בתקופה", 2500],
+    ["תזרים נטו", 7500],
+  ])
+    assert.equal(
+      await page
+        .locator(".stat")
+        .filter({ hasText: title })
+        .locator(".stat-value")
+        .textContent(),
+      formatMoney(expected),
+    );
+  assert.equal(
+    await page.locator(".spending .donut strong").textContent(),
+    formatMoney(2500),
+  );
+  assert.ok(
+    (await page.locator(".spending .donut").textContent()).includes("1 תנועות"),
+  );
+  const cashflowLabel = await page
+    .locator(".bar-group.current .bar-pair")
+    .getAttribute("aria-label");
+  assert.ok(
+    cashflowLabel.includes(
+      `הכנסות ${formatMoney(10000)}, הוצאות ${formatMoney(2500)}`,
+    ),
+  );
+  fixture.transactions = [cardPurchase, cardRefund];
+  await page.reload();
+  await page.getByRole("heading", { name: "אין תנועות בנק עדיין" }).waitFor();
+  for (const title of ["הכנסות בתקופה", "הוצאות בתקופה", "תזרים נטו"])
+    assert.equal(
+      await page
+        .locator(".stat")
+        .filter({ hasText: title })
+        .locator(".stat-value")
+        .textContent(),
+      formatMoney(0),
+    );
+  await page
+    .getByRole("heading", { name: "עוד אין הוצאות בתקופה הזו" })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("region", {
+        name: "התנועות האחרונות בכרטיסי האשראי",
+        exact: true,
+      })
+      .locator("tbody tr")
+      .count(),
+    2,
+  );
+  fixture.transactions = [
+    { ...cardPurchase, id: "synthetic-november-charge", description: "NOV_CHARGE", date: "2026-10-17", processed_date: "2026-11-02", status: "completed" },
+    { ...cardPurchase, id: "synthetic-december-charge", description: "DEC_CHARGE", date: "2026-10-17", processed_date: "2026-12-02", status: "completed" },
+    { ...cardPurchase, id: "synthetic-pending-charge", description: "PENDING_CHARGE", date: "2026-10-17", processed_date: "2026-11-02", status: "pending" },
+  ];
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: "תנועות", exact: true }).click();
+  assert.equal(await page.getByRole("tab", { name: "תנועות בנק" }).getAttribute("aria-selected"), "true");
+  await page.getByRole("tab", { name: "תנועות אשראי" }).click();
+  const billingMonth = page.getByLabel("חודש חיוב בכרטיס");
+  await billingMonth.selectOption("2026-11");
+  assert.equal(await page.locator(".transactions tbody tr").count(), 1);
+  assert.match(await page.locator(".transactions tbody").textContent(), /NOV_CHARGE/);
+  assert.doesNotMatch(await page.locator(".transactions tbody").textContent(), /DEC_CHARGE|PENDING_CHARGE/);
+  const monthDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "ייצוא CSV" }).click();
+  const monthStream = await (await monthDownload).createReadStream();
+  let monthCsv = "";
+  for await (const chunk of monthStream) monthCsv += chunk.toString();
+  assert.match(monthCsv, /NOV_CHARGE/);
+  assert.doesNotMatch(monthCsv, /DEC_CHARGE|PENDING_CHARGE/);
+  await billingMonth.selectOption("2026-12");
+  assert.match(await page.locator(".transactions tbody").textContent(), /DEC_CHARGE/);
+  assert.doesNotMatch(await page.locator(".transactions tbody").textContent(), /NOV_CHARGE/);
+  await billingMonth.selectOption("next");
+  assert.match(await page.locator(".transactions tbody").textContent(), /NOV_CHARGE/);
+  fixture.transactions.push(
+    ...[
+      [1, "2026-10-18", "2026-11-02", -20621],
+      [2, "2026-11-18", "2026-12-02", -20617],
+      [3, "2026-12-18", "2027-01-02", -20617],
+    ].map(([number, date, processed_date, amount]) => ({
+      ...cardPurchase,
+      id: `synthetic-five-payment-${number}`,
+      description: "FIVE_PAYMENT",
+      date,
+      processed_date,
+      amount,
+      status: "completed",
+      installment_group: "synthetic-five-payment-group",
+      installment_number: number,
+      installment_total: 5,
+    })),
+  );
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: "תנועות", exact: true }).click();
+  await page.getByRole("tab", { name: "תנועות אשראי" }).click();
+  const installmentMonth = page.getByLabel("חודש חיוב בכרטיס");
+  await installmentMonth.selectOption("2027-02");
+  assert.equal(await page.locator(".transactions tbody tr").count(), 1);
+  assert.match(await page.locator(".transactions tbody").textContent(), /FIVE_PAYMENT/);
+  assert.match(await page.locator(".transactions tbody").textContent(), /תשלום 4 מתוך 5/);
+  assert.match(await page.locator(".transactions tbody").textContent(), /צפוי · אומדן/);
+  await installmentMonth.selectOption("2027-03");
+  assert.match(await page.locator(".transactions tbody").textContent(), /תשלום 5 מתוך 5/);
+  await installmentMonth.selectOption("2027-04");
+  assert.equal(await page.locator(".transactions tbody tr").count(), 0);
+  fixture.transactions = [cardPurchase, cardRefund];
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  console.log("PASS: bank/card tabs filter billing months and show projected fourth and fifth installments without carrying them beyond completion");
+  await page.unroute("**/api/data");
+  console.log(
+    "PASS: income, expenses, net flow, cashflow chart, and category totals exclude card purchases/refunds while card transactions remain visible",
+  );
+  await page.clock.setFixedTime(new Date("2026-10-21T10:00:00Z"));
+  const originalSyncTimes = fixture.connections.map((connection) => connection.synced_at);
+  fixture.connections.forEach((connection) => { connection.synced_at = "2026-10-21T08:00:00Z"; });
+  fixture.connections[0].synced_at = "2026-10-21T09:50:00Z";
+  await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
+  await page.reload();
+  const lastSyncBanner = page.locator(".last-sync-banner");
+  await lastSyncBanner.getByText("סנכרון מוצלח אחרון: לפני 10 דקות").waitFor();
+  assert.match(await lastSyncBanner.textContent(), /12:50/);
+  fixture.connections.forEach((connection) => { connection.synced_at = null; });
+  await page.reload();
+  await lastSyncBanner.getByText("עדיין לא בוצע סנכרון מוצלח").waitFor();
+  fixture.connections.forEach((connection, index) => { connection.synced_at = originalSyncTimes[index]; });
+  await page.unroute("**/api/data");
+  console.log("PASS: last successful sync banner shows elapsed time and an empty state");
+  fixture.accounts = [
+    { ...fixture.accounts[0], provider: "hapoalim", currency: "ILS", balance: 273082 },
+    {
+      ...fixture.accounts[1],
+      provider: "visaCal",
+      currency: "ILS",
+      next_charge: 200000,
+      next_charge_date: "2026-11-02",
+    },
+    {
+      ...fixture.accounts[1],
+      id: "synthetic-second-card",
+      provider: "visaCal",
+      currency: "ILS",
+      next_charge: 312825,
+      next_charge_date: "2026-11-10",
+    },
+  ];
+  fixture.transactions = [
+    {
+      ...bankCredit,
+      id: "synthetic-mortgage",
+      date: "2026-09-10",
+      description: "טפחות - לווים",
+      amount: -666730,
+      status: "completed",
+    },
+    {
+      ...bankCredit,
+      id: "synthetic-old-card-bill",
+      date: "2026-09-12",
+      description: "ישראכרט",
+      amount: -1705400,
+      status: "completed",
+    },
+    {
+      ...cardPurchase,
+      id: "synthetic-cal-installment-a",
+      account_id: fixture.accounts[1].id,
+      connection_id: fixture.accounts[1].connection_id,
+      provider: "visaCal",
+      currency: "ILS",
+      date: "2026-10-02",
+      processed_date: "2026-11-02",
+      amount: -100000,
+      status: "completed",
+      installment_group: "synthetic-installment-a",
+      installment_number: 1,
+      installment_total: 3,
+    },
+    {
+      ...cardPurchase,
+      id: "synthetic-cal-installment-b",
+      account_id: fixture.accounts[2].id,
+      connection_id: fixture.accounts[2].connection_id,
+      provider: "visaCal",
+      currency: "ILS",
+      date: "2026-10-10",
+      processed_date: "2026-11-10",
+      amount: -50000,
+      status: "completed",
+      installment_group: "synthetic-installment-b",
+      installment_number: 1,
+      installment_total: 2,
+    },
+  ];
+  await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
+  const forecastSettings = {
+    daysBack: 30,
+    combineInstallments: true,
+    monthlyIncome: 1900000,
+    monthlyCardEstimate: 999999,
+    cardEstimatesByMonth: { "2026-12": 400000 },
+  };
+  await page.route("**/api/settings", (route) => {
+    if (route.request().method() === "PUT")
+      Object.assign(forecastSettings, route.request().postDataJSON());
+    return route.fulfill({ json: forecastSettings });
+  });
+  await page.reload();
+  const forecast = page.getByRole("region", { name: "תחזית תזרים" });
+  await forecast.getByText("חיובי כרטיסים צפויים · נובמבר 2026").waitFor();
+  const monthPicker = forecast.getByLabel("חודש התחזית");
+  assert.equal(await monthPicker.inputValue(), "2026-11-01");
+  const cardLine = forecast.locator(".forecast-line").filter({
+    hasText: "חיובי כרטיסים צפויים",
+  });
+  assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-512825));
+  assert.ok((await cardLine.textContent()).includes("02.11.2026"));
+  assert.ok((await cardLine.textContent()).includes("10.11.2026"));
+  assert.equal(
+    await forecast.locator(".forecast-result strong").textContent(),
+    formatMoney(720445),
+  );
+  await monthPicker.selectOption("2026-12-01");
+  await forecast.getByText("תרחיש חודשי ל־דצמבר 2026").waitFor();
+  assert.equal(
+    await forecast.locator(".forecast-line").filter({ hasText: "הכנסה חודשית קבועה" }).locator("strong").textContent(),
+    `+${formatMoney(1900000)}`,
+  );
+  assert.equal(
+    await forecast.locator(".forecast-line").filter({ hasText: "משכנתא חודשית" }).locator("strong").textContent(),
+    formatMoney(-666730),
+  );
+  assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-150000));
+  assert.match(await cardLine.textContent(), /תשלומים ידועים בלבד/);
+  assert.equal(
+    await forecast.locator(".forecast-result strong").textContent(),
+    formatMoney(1083270),
+  );
+  await monthPicker.selectOption("2027-01-01");
+  assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-100000));
+  assert.equal(
+    await forecast.locator(".forecast-result strong").textContent(),
+    formatMoney(1133270),
+  );
+  assert.equal(await forecast.getByRole("button", { name: "שמירת אומדן לחודש" }).count(), 0);
+  fixture.accounts[2].next_charge_date = null;
+  await page.reload();
+  await forecast.getByText(/קניות חדשות אינן כלולות/).waitFor();
+  assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-250000));
+  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(983270));
+  fixture.accounts[2].next_charge_date = "2026-11-10";
+  fixture.connections.push({
+    id: "synthetic-unavailable-card",
+    provider: "isracard",
+    name: "כרטיס ללא נתונים",
+    status: "failed",
+    synced_at: null,
+    remembered: false,
+  });
+  await page.reload();
+  await forecast.getByText(/סכומים נוספים חסרים בגלל חיבור שלא סונכרן/).waitFor();
+  assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-512825));
+  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(720445));
+  await page.unroute("**/api/settings");
+  await page.unroute("**/api/data");
+  console.log(
+    "PASS: real-number November, December, and January net cash flow uses month-specific known installments without copying the previous card bill",
+  );
+  const balanceFixture = await context.newPage();
+  await balanceFixture.setContent(
+    `<div class="balance"><div><span class="thin">יתרת עו&quot;ש</span><h6 class="plaintext"><span>₪</span> 1,234.56</h6></div></div><button class="balance">מסגרת אשראי ₪36,000</button><table><tr><th>תאריך</th><th>יתרה בש&quot;ח</th></tr><tr><td>11/10/26</td><td>900</td></tr></table>`,
+  );
+  assert.deepEqual(await readMizrahiBalance(balanceFixture), {
+    balance: 1234.56,
+  });
+  await balanceFixture.setContent(
+    `<div class="balance"><div><span class="thin">יתרת עו״ש</span><h6>₪0.00</h6></div></div>`,
+  );
+  assert.deepEqual(await readMizrahiBalance(balanceFixture), { balance: 0 });
+  await balanceFixture.route(
+    "https://mto.mizrahi-tefahot.co.il/balance-test-fixture",
+    (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<table><tr><th>תאריך</th><th>סוג תנועה</th><th>זכות/חובה</th><th>יתרה בש&quot;ח</th></tr><tr><td>22/09/26</td><td>דוגמה</td><td>-100</td><td>4,000</td></tr><tr><td>11/10/26</td><td>דוגמה</td><td>-200</td><td>-1,234.56</td></tr></table>`,
+      }),
+  );
+  await balanceFixture.setContent(
+    `<iframe src="https://mto.mizrahi-tefahot.co.il/balance-test-fixture"></iframe>`,
+  );
+  assert.deepEqual(await readMizrahiBalance(balanceFixture), {
+    balance: -1234.56,
+    balanceDate: "2026-10-11",
+  });
+  await balanceFixture.setContent(
+    `<button class="balance">מסגרת אשראי ₪36,000</button>`,
+  );
+  assert.equal(await readMizrahiBalance(balanceFixture), null);
+  await balanceFixture.close();
+  console.log(
+    "PASS: Mizrahi header balance, genuine zero, iframe ledger fallback, and credit-limit exclusion",
+  );
+  assert.deepEqual(errors, [], "Browser JavaScript exceptions");
+  await context.close();
+} finally {
+  await browser.close();
+}
