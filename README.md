@@ -1,6 +1,6 @@
-# כספיון Web
+# Shklops
 
-A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `israeli-bank-scrapers` source in `vendor/israeli-bank-scrapers/`. This repository contains the web app and its scraper dependency; the older Caspion Electron application is in a separate repository.
+A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `israeli-bank-scrapers` source in `vendor/israeli-bank-scrapers/`. This repository contains Shklops and its scraper dependency.
 
 ## What is implemented
 
@@ -20,8 +20,8 @@ A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `
 Install **Node.js 22.22.2 or newer** and Git, then clone this repository:
 
 ```bash
-git clone https://github.com/int21asm/caspion-web.git
-cd caspion-web
+git clone https://github.com/int21asm/shklops.git
+cd shklops
 node start-demo.mjs
 ```
 
@@ -154,4 +154,4 @@ The bank-MFA dialog is **not** application-login MFA. Adding a browser-visible O
 
 ## Attribution
 
-Uses [israeli-bank-scrapers](https://github.com/eshaham/israeli-bank-scrapers), from the pinned `int21asm/israeli-bank-scrapers` checkout, under its MIT license. The web workflow is inspired by [כספיון](https://github.com/brafdlog/caspion), also MIT. This is an independent interface, not an official bank service; Caspion's Electron app is not embedded in the server.
+Uses [israeli-bank-scrapers](https://github.com/eshaham/israeli-bank-scrapers), from the pinned `int21asm/israeli-bank-scrapers` checkout, under its MIT license. The web workflow is inspired by [כספיון](https://github.com/brafdlog/caspion), also MIT. Shklops is an independent interface, not an official bank service.

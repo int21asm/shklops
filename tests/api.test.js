@@ -11,7 +11,7 @@ import { bankDate } from "../shared/calendar.js";
 process.env.APP_ORIGIN = "http://localhost:3002";
 const origin = process.env.APP_ORIGIN;
 async function setup(t, options = {}) {
-  const directory = mkdtempSync(path.join(tmpdir(), "kaspion-test-"));
+  const directory = mkdtempSync(path.join(tmpdir(), "shklops-test-"));
   const runtime = await createApplication({ dataDir: directory, ...options });
   t.after(async () => {
     await runtime.close();

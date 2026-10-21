@@ -100,7 +100,7 @@ export async function createApplication({
   });
   function session(req, res, user) {
     const token = randomBytes(32).toString("base64url");
-    const cookieName = production ? "__Host-kaspion" : "kaspion";
+    const cookieName = production ? "__Host-shklops" : "shklops";
     const old = req.headers.cookie
       ?.split("; ")
       .find((c) => c.startsWith(`${cookieName}=`))
@@ -121,7 +121,7 @@ export async function createApplication({
     });
   }
   app.use("/api", (req, _res, next) => {
-    const name = production ? "__Host-kaspion" : "kaspion";
+    const name = production ? "__Host-shklops" : "shklops";
     const token = req.headers.cookie
       ?.split("; ")
       .find((c) => c.startsWith(`${name}=`))
@@ -202,7 +202,7 @@ export async function createApplication({
   app.post("/api/auth/logout", (req, res) => {
     // Revoke every session for this account, including this browser's cookie.
     db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.user.id);
-    res.clearCookie(production ? "__Host-kaspion" : "kaspion", { path: "/" });
+    res.clearCookie(production ? "__Host-shklops" : "shklops", { path: "/" });
     res.json({ ok: true });
   });
   app.get("/api/providers", (_req, res) => res.json(providers));

@@ -176,7 +176,7 @@ function Brand({ small = false }) {
         <span />
       </span>
       <strong>
-        כספיון<span>web</span>
+        Shklops
       </strong>
     </div>
   );
@@ -467,7 +467,7 @@ function Login({ onUser }) {
         </section>
       </div>
       <footer className="auth-footer">
-        מבוסס על israeli-bank-scrapers והרעיון של כספיון · פרויקט עצמאי
+        Shklops · מבוסס על israeli-bank-scrapers · פרויקט עצמאי
       </footer>
     </main>
   );
@@ -1242,7 +1242,7 @@ function App() {
               <ShieldCheck size={14} /> המידע מוצג רק במרחב האישי שלכם
             </span>
             <span>
-              כספיון web <span className="footer-divider">/</span> עושים מקום
+              Shklops <span className="footer-divider">/</span> עושים מקום
               לתמונה ברורה
             </span>
           </footer>
@@ -1422,7 +1422,7 @@ function App() {
       )}
       {help && (
         <Modal
-          title="נעים להכיר, כספיון web"
+          title="נעים להכיר, Shklops"
           icon={CircleHelp}
           subtitle="מרחב אחד שמרכז מידע פיננסי מבנקים וכרטיסי אשראי בישראל."
           onClose={() => setHelp(false)}
@@ -1437,7 +1437,7 @@ function App() {
               באתר הבנק; האפליקציה תציג הודעת כישלון במקום להניח שהסנכרון הצליח.
             </p>
             <p>
-              האתר מבוסס על ספריית <b>israeli-bank-scrapers</b> ומושפע מכספיון.
+              האתר מבוסס על ספריית <b>israeli-bank-scrapers</b> ומושפע מפרויקט כספיון המקורי.
               זהו פרויקט עצמאי, ללא שיוך לבנקים.
             </p>
             <button
@@ -2058,7 +2058,7 @@ function Transactions({
     );
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `kaspion-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `shklops-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
