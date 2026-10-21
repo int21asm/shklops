@@ -2,6 +2,8 @@
 
 A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `israeli-bank-scrapers` source in `vendor/israeli-bank-scrapers/`. This repository contains Shklops and its scraper dependency.
 
+![Shklops dashboard](docs/dashboard.png)
+
 ## What is implemented
 
 - Registration and login, scrypt password hashes, HttpOnly session cookies, server-side session revocation, rate limits, and same-origin write checks.
