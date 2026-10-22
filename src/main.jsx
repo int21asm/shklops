@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
 import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth, upcomingCardCharges } from "../shared/forecast.js";
 import { recurringPayments } from "../shared/recurring.js";
+import { cardCategories } from "../shared/categories.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -1828,7 +1829,10 @@ function RecurringPayments({ data, providers, hidden }) {
 }
 
 function Spending({ transactions, hidden }) {
-  const palette = ["#6955df", "#9681f0", "#b7a5f3", "#d6caf7", "#e9e2fa"];
+  const [activeName, setActiveName] = useState(null);
+  const tooltipId = useId();
+  const palette = ["#6955df", "#d87952", "#388eab", "#8c6dcc", "#58a58b", "#ce759f", "#9b87df", "#b19545", "#5f86c6", "#9c7188", "#59a4a6", "#b08a66", "#6679ae", "#80a55b", "#a18eae", "#b8b2c8"];
+  const categoryColor = (name) => palette[(cardCategories.indexOf(name) + palette.length) % palette.length];
   const groups = {};
   transactions
     .filter((t) => t.amount < 0 && t.currency === "ILS")
@@ -1837,16 +1841,33 @@ function Spending({ transactions, hidden }) {
         ? t.category : "טרם סווג עם ChatGPT";
       groups[category] = (groups[category] || 0) - t.amount;
     });
-  const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]),
-    top = sorted.slice(0, 4);
-  if (sorted.length > 4)
-    top.push(["אחר", sorted.slice(4).reduce((s, x) => s + x[1], 0)]);
-  const total = top.reduce((s, x) => s + x[1], 0);
+  const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  const total = sorted.reduce((s, x) => s + x[1], 0);
+  const percentLabel = (value) => value / total < 0.001 ? "<0.1%"
+    : new Intl.NumberFormat("he-IL", { style: "percent", maximumFractionDigits: 1 }).format(value / total);
   let offset = 0;
-  const parts = top.map(([name, value], i) => {
+  const parts = sorted.map(([name, value]) => {
     const start = offset;
     offset += (value / (total || 1)) * 100;
-    return `${palette[i]} ${start}% ${offset}%`;
+    return { name, value, start, percent: (value / total) * 100, color: categoryColor(name) };
+  });
+  const active = parts.find((part) => part.name === activeName);
+  const arcPath = (start, percent) => {
+    if (percent >= 100) return "M 50 8 A 42 42 0 1 1 50 92 A 42 42 0 1 1 50 8";
+    const point = (part) => {
+      const angle = (part / 100) * Math.PI * 2 - Math.PI / 2;
+      return `${50 + 42 * Math.cos(angle)} ${50 + 42 * Math.sin(angle)}`;
+    };
+    return `M ${point(start)} A 42 42 0 ${percent > 50 ? 1 : 0} 1 ${point(start + percent)}`;
+  };
+  const interaction = (name) => ({
+    onPointerEnter: () => setActiveName(name), onPointerLeave: () => setActiveName(null),
+    onFocus: () => setActiveName(name), onBlur: () => setActiveName(null), onClick: () => setActiveName(name),
+    onKeyDown: (event) => {
+      if (["Enter", " ", "Escape"].includes(event.key)) {
+        event.preventDefault(); setActiveName(event.key === "Escape" ? null : name);
+      }
+    },
   });
   return (
     <section className="panel spending" aria-label="הוצאות אשראי לפי קטגוריות">
@@ -1867,11 +1888,16 @@ function Spending({ transactions, hidden }) {
         />
       ) : (
         <>
-          <div
-            className="donut"
-            style={{ background: `conic-gradient(${parts.join(",")})` }}
-          >
-            <div>
+          <div className="donut">
+            <svg viewBox="0 0 100 100" role="group" aria-label="חלוקת חיובי האשראי לכל הקטגוריות">
+              <circle cx="50" cy="50" r="42" className="donut-track" />
+              {parts.map((part) => <path key={part.name} d={arcPath(part.start, part.percent)}
+                className={`donut-segment ${activeName === part.name ? "active" : ""}`}
+                stroke={part.color} role="button" tabIndex={0}
+                aria-label={`${part.name} · ${percentLabel(part.value)}`} aria-describedby={activeName === part.name ? tooltipId : undefined}
+                data-category={part.name} data-start={part.start} data-percent={part.percent} data-amount={part.value} {...interaction(part.name)} />)}
+            </svg>
+            <div className="donut-center" onClick={() => setActiveName(null)}>
               <small>סך חיובי האשראי</small>
               <strong dir="ltr">{hidden ? "••••••" : shekel(total)}</strong>
               <span>
@@ -1883,18 +1909,20 @@ function Spending({ transactions, hidden }) {
                 תנועות
               </span>
             </div>
+            {active && <div className="donut-tooltip" id={tooltipId} role="tooltip">
+              <strong>{active.name}</strong>
+              <span><bdi>{percentLabel(active.value)}</bdi>{!hidden && <> · <bdi>{shekel(active.value)}</bdi></>}</span>
+            </div>}
           </div>
           <div className="spending-legend">
-            {top.map(([name, value], i) => (
-              <div key={name}>
+            {parts.map(({ name, value, color }) => (
+              <div key={name} className={activeName === name ? "active" : ""} role="button" tabIndex={0}
+                aria-label={`${name} · ${percentLabel(value)}`} aria-describedby={activeName === name ? tooltipId : undefined} {...interaction(name)}>
                 <span>
-                  <i style={{ background: palette[i] }} />
+                  <i style={{ background: color }} />
                   {name}
                 </span>
-                <b>
-                  {Math.round((value / total) * 100)}
-                  <small>%</small>
-                </b>
+                <b><bdi>{percentLabel(value)}</bdi></b>
                 <em dir="ltr">{hidden ? "•••" : shekel(value)}</em>
               </div>
             ))}

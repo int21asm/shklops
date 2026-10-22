@@ -567,6 +567,57 @@ try {
   assert.equal(await page.locator(".spending .donut strong").textContent(), formatMoney(960000));
   await page.getByLabel("תקופה", { exact: true }).selectOption("month");
   await page.screenshot({ path: "test-results/card-category-spending-desktop.png", fullPage: true });
+  const originalSpendingTransactions = fixture.transactions;
+  const additionalCategories = ["בריאות", "ביטוח ופיננסים", "אוכל ובילויים", "כללי", "מחשבים ואלקטרוניקה", "ספורט ופנאי", "מנויים", "מתנות ותרומות"];
+  const extraSpendingRows = additionalCategories.map((category, index) => ({ ...cardPurchase,
+    id: `all-category-${index}`, category, amount: index === additionalCategories.length - 1 ? -1 : -(14000 - index * 1000),
+  }));
+  fixture.transactions = [...originalSpendingTransactions, ...extraSpendingRows];
+  await page.reload();
+  const spendingPanel = page.getByRole("region", { name: "הוצאות אשראי לפי קטגוריות", exact: true });
+  const segments = spendingPanel.locator(".donut-segment");
+  await segments.nth(10).waitFor({ state: "attached" });
+  assert.equal(await segments.count(), 11, "every category, including the smallest, has its own segment");
+  assert.equal(await spendingPanel.locator(".spending-legend > div").count(), 11);
+  assert.equal(await spendingPanel.locator(".spending-legend").getByText("אחר", { exact: true }).count(), 0);
+  assert.equal(new Set(await segments.evaluateAll((items) => items.map((item) => item.getAttribute("stroke")))).size, 11);
+  const arcTotals = await segments.evaluateAll((items) => ({ percent: items.reduce((sum, item) => sum + Number(item.dataset.percent), 0), amount: items.reduce((sum, item) => sum + Number(item.dataset.amount), 0) }));
+  assert.ok(Math.abs(arcTotals.percent - 100) < 0.00001);
+  assert.equal(arcTotals.amount, 940000 - extraSpendingRows.reduce((sum, row) => sum + row.amount, 0));
+  async function hoverSegment(segment) {
+    await spendingPanel.locator(".donut").scrollIntoViewIfNeeded();
+    const box = await spendingPanel.locator(".donut svg").boundingBox();
+    const angle = ((Number(await segment.getAttribute("data-start")) + Number(await segment.getAttribute("data-percent")) / 2) / 100) * Math.PI * 2 - Math.PI / 2;
+    await page.mouse.move(box.x + box.width * (0.5 + 0.42 * Math.cos(angle)), box.y + box.height * (0.5 + 0.42 * Math.sin(angle)));
+  }
+  for (const category of ["מזון וקניות", "בריאות", "מנויים"]) {
+    const segment = spendingPanel.locator(`.donut-segment[data-category="${category}"]`);
+    await hoverSegment(segment);
+    await spendingPanel.getByRole("tooltip").getByText(category, { exact: true }).waitFor();
+    const label = await segment.getAttribute("aria-label");
+    assert.ok((await spendingPanel.getByRole("tooltip").textContent()).includes(label.split(" · ")[1]));
+  }
+  await spendingPanel.screenshot({ path: "test-results/spending-all-categories-desktop.png", animations: "disabled" });
+  const tinySegment = spendingPanel.locator('.donut-segment[data-category="מתנות ותרומות"]');
+  await tinySegment.focus();
+  assert.match(await spendingPanel.getByRole("tooltip").textContent(), /מתנות ותרומות.*<0.1%/s);
+  await tinySegment.press("Escape");
+  assert.equal(await spendingPanel.getByRole("tooltip").count(), 0);
+  await page.getByRole("button", { name: "הסתרת סכומים", exact: true }).click();
+  await spendingPanel.locator('.donut-segment[data-category="בריאות"]').focus();
+  assert.ok(!(await spendingPanel.getByRole("tooltip").textContent()).includes("₪"));
+  await page.getByRole("button", { name: "הצגת סכומים", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await spendingPanel.scrollIntoViewIfNeeded();
+  await spendingPanel.locator(".spending-legend > div").filter({ hasText: "מנויים" }).click();
+  await spendingPanel.getByRole("tooltip").getByText("מנויים", { exact: true }).waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  await spendingPanel.screenshot({ path: "test-results/spending-all-categories-mobile.png", animations: "disabled" });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  fixture.transactions = originalSpendingTransactions;
+  await page.reload();
+  await page.locator(".spending .donut strong").filter({ hasText: formatMoney(940000) }).waitFor();
+  console.log("PASS: every category has an accurately sized segment; real arc hover, keyboard focus, tiny shares and mobile legend taps show category percentages and respect hidden amounts");
   const cashflowLabel = await page
     .locator(".bar-group.current .bar-pair")
     .getAttribute("aria-label");
@@ -588,6 +639,9 @@ try {
       formatMoney(0),
     );
   assert.equal(await page.locator(".spending .donut strong").textContent(), formatMoney(900000));
+  assert.equal(await page.locator(".spending .donut-segment").count(), 1);
+  await page.locator(".spending .donut-segment").focus();
+  assert.match(await page.locator(".spending").getByRole("tooltip").textContent(), /100%/);
   fixture.transactions = [{ ...bankCredit, amount: -2500 }];
   await page.reload();
   await page.getByRole("heading", { name: "עוד אין חיובי אשראי בתקופה הזו" }).waitFor();

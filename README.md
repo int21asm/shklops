@@ -58,7 +58,7 @@ Identical descriptions are grouped, processed in batches, and validated against 
 
 Categories, short evidence explanations, self-reported confidence, verified source links, prompt version, model, and classification time are stored in SQLite and survive later bank syncs. Click a category badge in the transaction table to inspect the explanation and links. Confidence is the model's assessment, not a calibrated probability. Successful batches remain saved if a later batch fails; click the button again to handle remaining transactions. Projected installments inherit the category of their source transaction. The AI classifications are marked with a sparkle icon in the table.
 
-The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. The four largest categories are shown separately and the rest are grouped as **אחר**.
+The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. Every category has its own colored segment and legend entry. Hover, focus or tap a segment or legend row to see its category, percentage and amount; hidden-money mode conceals the amount. Small categories are not merged into an artificial “other” bucket.
 
 ### Subscriptions and recurring payments
 

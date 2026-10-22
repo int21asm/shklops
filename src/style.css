@@ -1104,20 +1104,26 @@ button .spin {
   height: 156px;
   margin: 12px auto 18px;
   border-radius: 50%;
-  padding: 17px;
-  transform: rotate(-90deg);
+  position: relative;
 }
-.donut > div {
-  width: 100%;
-  height: 100%;
+.donut > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.donut-track, .donut-segment { fill: none; stroke-width: 9; }
+.donut-track { stroke: #f1eef8; }
+.donut-segment { cursor: pointer; pointer-events: stroke; outline: none; }
+.donut-segment.active, .donut-segment:focus-visible { stroke-width: 11; }
+.donut > .donut-center {
+  position: absolute;
+  inset: 13%;
   border-radius: 50%;
   background: white;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transform: rotate(90deg);
 }
+.donut .donut-tooltip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); z-index: 4; min-width: 150px; max-width: 240px; padding: 10px 12px; border: 1px solid #e4def3; border-radius: 10px; background: white; box-shadow: 0 5px 20px #39216a16; text-align: center; pointer-events: none; }
+.donut .donut-tooltip strong { display: block; margin: 0 0 5px; font-size: 12px; color: #40374f; letter-spacing: 0; }
+.donut .donut-tooltip span { font-size: 11px; color: #7e718f; white-space: nowrap; }
 .donut small {
   font-size: 9px;
   color: #aaa6ba;
@@ -1142,7 +1148,10 @@ button .spin {
   display: flex;
   align-items: center;
   font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
 }
+.spending-legend > div.active, .spending-legend > div:focus-visible { background: #f4f0fc; outline: 2px solid #ebe4fa; }
 .spending-legend > div > span {
   display: flex;
   align-items: center;
@@ -1156,7 +1165,7 @@ button .spin {
   border-radius: 2px;
 }
 .spending-legend b {
-  width: 30px;
+  width: 56px;
   text-align: center;
   font-size: 9px;
   color: #868496;
@@ -3444,7 +3453,9 @@ tbody tr:hover {
   .spending .donut {
     width: 128px;
     height: 128px;
-    padding: 15px;
+  }
+  .spending .donut .donut-center > strong {
+    font-size: 16px;
   }
   .spending-legend {
     margin-left: 17px;
