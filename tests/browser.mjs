@@ -98,15 +98,17 @@ try {
   await page.getByRole("tab", { name: "תנועות בנק" }).click();
   let categoryJob = null;
   const categoryRequests = [];
+  const generalRequests = [];
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { connected: true, email: "test@example.com" } }));
   await page.route("**/api/ai/models", (route) => route.fulfill({ json: [{ id: "test-model", name: "Test model" }] }));
   await page.route("**/api/ai/categorization", (route) => {
     if (route.request().method() === "POST") {
       categoryRequests.push(route.request().postDataJSON().refresh);
+      generalRequests.push(route.request().postDataJSON().generalOnly);
       categoryJob = { id: `category-${categoryRequests.length}`, status: "completed", totalMerchants: 2, completedMerchants: 2, updatedTransactions: 3 };
       return route.fulfill({ status: 202, json: categoryJob });
     }
-    return route.fulfill({ json: { connected: true, totalTransactions: 3, pendingTransactions: categoryJob ? 0 : 3,
+    return route.fulfill({ json: { connected: true, totalTransactions: 3, generalTransactions: 1, pendingTransactions: categoryJob ? 0 : 3,
       lastCategorizedAt: categoryJob ? new Date().toISOString() : null, job: categoryJob } });
   });
   await page.getByRole("tab", { name: "תנועות אשראי" }).click();
@@ -118,6 +120,9 @@ try {
   await categoryControls.getByLabel("סיווג מחדש גם לתנועות שכבר סווגו").check();
   await categoryControls.getByRole("button", { name: "סיווג קטגוריות", exact: true }).click();
   assert.deepEqual(categoryRequests, [false, true]);
+  await categoryControls.getByRole("button", { name: "בדיקה מחדש של כללי (1)", exact: true }).click();
+  assert.deepEqual(categoryRequests, [false, true, false]);
+  assert.deepEqual(generalRequests, [false, false, true]);
   await page.screenshot({ path: "test-results/card-categorization-desktop.png", fullPage: true });
   await page.unroute("**/api/ai/status");
   await page.unroute("**/api/ai/models");
@@ -495,6 +500,10 @@ try {
     category: "מזון וקניות",
     category_source: "chatgpt",
     category_description: "SYNTHETIC_GROCERY",
+    category_explanation: "רשת מזון שזוהתה לפי אתר בית העסק",
+    category_confidence: "high",
+    category_web_searched: 1,
+    category_sources: '["https://merchant.example/","javascript:alert(1)","http://"]',
   };
   const cardRefund = {
     ...bankCredit,
@@ -609,6 +618,13 @@ try {
   assert.equal(await page.locator(".transactions tbody tr").count(), 1);
   assert.match(await page.locator(".transactions tbody").textContent(), /NOV_CHARGE/);
   assert.doesNotMatch(await page.locator(".transactions tbody").textContent(), /DEC_CHARGE|PENDING_CHARGE/);
+  await page.getByLabel("פרטי הסיווג של NOV_CHARGE", { exact: true }).click();
+  const evidence = page.locator(".category-evidence[open]");
+  await evidence.getByText("רשת מזון שזוהתה לפי אתר בית העסק").waitFor();
+  assert.match(await evidence.textContent(), /גבוה.*נבדק ברשת/);
+  assert.equal(await evidence.locator("a").count(), 1);
+  assert.equal(await evidence.locator("a").getAttribute("href"), "https://merchant.example/");
+  await page.screenshot({ path: "test-results/category-evidence-desktop.png", fullPage: true });
   const monthDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "ייצוא CSV" }).click();
   const monthStream = await (await monthDownload).createReadStream();

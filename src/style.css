@@ -3604,4 +3604,11 @@ tbody tr:hover {
 .card-category-actions input { width: 16px; height: 16px; accent-color: #7058db; }
 .card-category-progress { width: 100%; color: #65588e; font-size: 12px; }
 .category-pill svg { margin-inline-start: 4px; vertical-align: middle; }
+.category-evidence summary { cursor: pointer; list-style: none; }
+.category-evidence summary::-webkit-details-marker { display: none; }
+.category-evidence summary .category-pill { border-bottom: 1px dotted #a89bcf; }
+.category-evidence > div { min-width: 180px; max-width: 290px; white-space: normal; margin-top: 8px; padding: 10px; border: 1px solid #e5e0f4; border-radius: 8px; background: #fcfbff; font-size: 12px; }
+.category-evidence p { margin: 0 0 7px; }
+.category-evidence small { display: block; color: #8b859c; }
+.category-evidence a { display: flex; align-items: center; gap: 4px; margin-top: 7px; color: #6955df; }
 @media (max-width: 680px) { .card-category-controls { padding: 16px 18px; } .card-category-actions { width: 100%; } }

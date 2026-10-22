@@ -59,6 +59,11 @@ export function createStore(directory) {
     ["categorized_at", "TEXT"],
     ["category_model", "TEXT"],
     ["category_description", "TEXT"],
+    ["category_explanation", "TEXT"],
+    ["category_confidence", "TEXT"],
+    ["category_sources", "TEXT NOT NULL DEFAULT '[]'"],
+    ["category_web_searched", "INTEGER NOT NULL DEFAULT 0"],
+    ["category_version", "TEXT"],
   ]) {
     if (!transactionColumns.has(name)) db.exec(`ALTER TABLE transactions ADD COLUMN ${name} ${type}`);
   }

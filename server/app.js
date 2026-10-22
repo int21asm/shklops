@@ -232,7 +232,7 @@ export async function createApplication({
   });
   app.get("/api/ai/categorization", (req, res) => res.json(categoryJobs.status(req.user.id)));
   app.post("/api/ai/categorization", aiLimit, (req, res) => {
-    const options = z.object({ refresh: z.boolean().optional(), model: z.string().max(100).optional() }).strict().parse(req.body);
+    const options = z.object({ refresh: z.boolean().optional(), generalOnly: z.boolean().optional(), model: z.string().max(100).optional() }).strict().parse(req.body);
     res.status(202).json(categoryJobs.start(req.user.id, options));
   });
   app.get("/api/settings", (req, res) =>

@@ -2099,17 +2099,17 @@ function CardCategoryControls({ onDataChange, onAiConnect }) {
     return () => { mounted = false; clearInterval(interval); };
   }, []);
   const running = starting || status?.job?.status === "running";
-  async function categorize() {
+  async function categorize(generalOnly = false) {
     setStarting(true); setError("");
     try {
-      const job = await api("/ai/categorization", { method: "POST", body: { refresh: refreshAll, model } });
+      const job = await api("/ai/categorization", { method: "POST", body: { refresh: !generalOnly && refreshAll, generalOnly, model } });
       setStatus((previous) => ({ ...previous, job }));
     } catch (e) { setError(e.message); }
     finally { setStarting(false); }
   }
   return <div className="card-category-controls" aria-label="סיווג קטגוריות עם ChatGPT">
     <div><strong><Sparkles size={16} /> קטגוריות עם ChatGPT</strong>
-      <p>הסיווג פועל רק בלחיצה. תיאורי בתי העסק נשלחים ל־OpenAI והקטגוריות נשמרות אצלכם.</p>
+      <p>הסיווג פועל רק בלחיצה. תיאורי בתי העסק נשלחים ל־OpenAI; לעסקים לא מוכרים מתבצע גם חיפוש ברשת. הסיווג והמקורות נשמרים אצלכם.</p>
       {status && <small>{status.pendingTransactions} תנועות ממתינות לסיווג מתוך {status.totalTransactions}
         {status.lastCategorizedAt ? ` · סיווג אחרון: ${syncDateFormat.format(new Date(status.lastCategorizedAt))}` : ""}</small>}
     </div>
@@ -2118,16 +2118,34 @@ function CardCategoryControls({ onDataChange, onAiConnect }) {
         {models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
       <label><input type="checkbox" checked={refreshAll} onChange={(event) => setRefreshAll(event.target.checked)} disabled={running} /> סיווג מחדש גם לתנועות שכבר סווגו</label>
-      <button className="button white" onClick={categorize} disabled={running || !model || !status.totalTransactions || (!refreshAll && !status.pendingTransactions)}>
+      <button className="button white" onClick={() => categorize()} disabled={running || !model || !status.totalTransactions || (!refreshAll && !status.pendingTransactions)}>
         {running ? <Spinner /> : <Sparkles size={16} />} {running ? "מסווגים…" : "סיווג קטגוריות"}
       </button>
+      <button className="button white" onClick={() => categorize(true)} disabled={running || !model || !status.generalTransactions}>בדיקה מחדש של כללי{status.generalTransactions ? ` (${status.generalTransactions})` : ""}</button>
     </div> : status && <button className="button white" onClick={onAiConnect}>חיבור ChatGPT לסיווג</button>}
     {status?.job && <div className="card-category-progress" role="status">
-      {status.job.status === "running" ? `סווגו ${status.job.completedMerchants} מתוך ${status.job.totalMerchants} בתי עסק · עודכנו ${status.job.updatedTransactions} תנועות`
+      {status.job.status === "running" ? `${status.job.stage === "researching" ? "בודקים בית עסק ברשת · " : ""}סווגו ${status.job.completedMerchants} מתוך ${status.job.totalMerchants} בתי עסק · עודכנו ${status.job.updatedTransactions} תנועות · הושלמו ${status.job.researchedMerchants || 0} בדיקות רשת`
         : status.job.status === "completed" ? `הסיווג הושלם · עודכנו ${status.job.updatedTransactions} תנועות` : status.job.error}
     </div>}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>;
+}
+
+function CategoryBadge({ transaction: t }) {
+  let sources = [];
+  try { sources = JSON.parse(t.category_sources || "[]").filter((value) => {
+    try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
+  }); } catch { /* Older classifications have no sources. */ }
+  const badge = <span className="category-pill" title={t.category_source === "chatgpt" ? "סווג עם ChatGPT" : undefined}>{t.category}{t.category_source === "chatgpt" && <Sparkles size={10} />}</span>;
+  if (!t.category_explanation) return badge;
+  return <details className="category-evidence">
+    <summary aria-label={`פרטי הסיווג של ${t.description}`}>{badge}</summary>
+    <div>
+      <p>{t.category_explanation}</p>
+      <small>ביטחון מדווח: {{ high: "גבוה", medium: "בינוני", low: "נמוך" }[t.category_confidence] || "לא צוין"} · {t.category_web_searched ? "נבדק ברשת" : "לפי תיאור בית העסק"}</small>
+      {sources.map((url) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">{new URL(url).hostname} <ExternalLink size={11} /></a>)}
+    </div>
+  </details>;
 }
 
 function Transactions({
@@ -2462,7 +2480,7 @@ function Transactions({
                       </div>
                     </td>
                     <td>
-                      <span className="category-pill" title={t.category_source === "chatgpt" ? "סווג עם ChatGPT" : undefined}>{t.category}{t.category_source === "chatgpt" && <Sparkles size={10} />}</span>
+                      <CategoryBadge transaction={t} />
                     </td>
                     <td>
                       <span
