@@ -60,7 +60,6 @@ import "./style.css";
 const labels = {
   dashboard: "סקירה כללית",
   transactions: "תנועות",
-  accounts: "חשבונות וכרטיסים",
   settings: "הגדרות",
 };
 const colors = {
@@ -502,6 +501,7 @@ function App() {
     [mobile, setMobile] = useState(false),
     [period, setPeriod] = useState("month"),
     [forecastMonth, setForecastMonth] = useState(""),
+    [settingsTab, setSettingsTab] = useState("sync"),
     [hidden, setHidden] = useState(false),
     [activity, setActivity] = useState(false);
   const statuses = useRef("");
@@ -676,7 +676,13 @@ function App() {
   }));
   function navigate(target, kind = "bank") {
     if (target === "transactions") setTransactionsKind(kind);
-    setPage(target);
+    if (target === "accounts") {
+      setSettingsTab("accounts");
+      setPage("settings");
+    } else {
+      if (target === "settings") setSettingsTab("sync");
+      setPage(target);
+    }
     setMobile(false);
   }
   async function startSync(connection, credentials) {
@@ -810,12 +816,10 @@ function App() {
             <X size={20} />
           </button>
         </div>
-        <small className="nav-caption">ניווט</small>
         <nav>
           {[
             [LayoutDashboard, "dashboard"],
             [ArrowRight, "transactions"],
-            [Wallet, "accounts"],
             [Settings2, "settings"],
           ].map(([Icon, key]) => (
             <button
@@ -825,7 +829,6 @@ function App() {
             >
               <Icon size={20} />
               <span>{labels[key]}</span>
-              {key === "accounts" && <b>{data.connections.length}</b>}
               {page === key && <span className="nav-active-dot" />}
             </button>
           ))}
@@ -954,9 +957,7 @@ function App() {
                   ? "כל החשבונות, כל התנועות. קצת יותר סדר ביום שלכם."
                   : page === "transactions"
                     ? "כל ההוצאות וההכנסות, בלי לדלג בין אפליקציות."
-                    : page === "accounts"
-                      ? "הבנקים וכרטיסי האשראי שמחוברים למרחב שלכם."
-                      : "כאן בוחרים איך המרחב שלכם עובד."}
+                  : "כאן בוחרים איך המרחב שלכם עובד."}
               </p>
             </div>
             <div className="heading-actions">
@@ -972,25 +973,17 @@ function App() {
               {page !== "settings" && (
                 <button
                   className="button primary"
-                  onClick={
-                    page === "accounts"
-                      ? () => setModal({ type: "connect" })
-                      : syncAll
-                  }
+                  onClick={syncAll}
                   disabled={active.length > 0}
                 >
                   {active.length ? (
                     <Spinner />
-                  ) : page === "accounts" ? (
-                    <Plus size={17} />
                   ) : (
                     <RefreshCw size={16} />
                   )}{" "}
                   {active.length
                     ? "מסנכרנים…"
-                    : page === "accounts"
-                      ? "חיבור חשבון חדש"
-                      : "סנכרון חשבונות"}
+                    : "סנכרון חשבונות"}
                 </button>
               )}
             </div>
@@ -1181,72 +1174,35 @@ function App() {
               providers={providerMap}
             />
           )}
-          {page === "accounts" && (
-            <>
-              <div className="info-note">
-                <ShieldCheck size={19} />
-                <div>
-                  <strong>החיבור משמש לקריאת נתונים בלבד</strong>
-                  <p>
-                    הסנכרון לא מבצע העברות או תשלומים. ייתכן שהבנק יבקש קוד
-                    אימות במהלך ההתחברות.
-                  </p>
-                </div>
-              </div>
-              <div className="connection-grid">
-                {data.connections.map((c) => (
-                  <ConnectionCard
-                    key={c.id}
-                    connection={c}
-                    accounts={data.accounts}
-                    transactions={data.transactions}
-                    providers={providerMap}
-                    jobs={active}
-                    lastRun={latestRuns.get(c.id)}
-                    showCardSelection
-                    updatingCardId={updatingCardId}
-                    onCardEnabledChange={changeCardEnabled}
-                    onSync={() => requestConnectionSync(c)}
-                    onDelete={() => setModal({ type: "delete", connection: c })}
-                    onForget={
-                      c.remembered
-                        ? async () => {
-                            try {
-                              await api(`/connections/${c.id}/forget`, {
-                                method: "POST",
-                                body: {},
-                              });
-                              await refresh();
-                              setToast("פרטי הכניסה נמחקו");
-                            } catch (e) {
-                              setError(e.message);
-                            }
-                          }
-                        : null
-                    }
-                  />
-                ))}
-                <button
-                  className="add-account-tile large"
-                  onClick={() => setModal({ type: "connect" })}
-                >
-                  <span>
-                    <Plus size={24} />
-                  </span>
-                  <strong>מחברים חשבון נוסף</strong>
-                  <small>בחרו בנק או חברת אשראי</small>
-                </button>
-              </div>
-            </>
-          )}
           {page === "settings" && (
             <Settings
+              tab={settingsTab}
+              setTab={setSettingsTab}
               settings={settings}
               setSettings={setSettings}
               user={user}
               live={live}
+              data={data}
+              providers={providerMap}
+              jobs={active}
+              latestRuns={latestRuns}
+              updatingCardId={updatingCardId}
+              onCardEnabledChange={changeCardEnabled}
+              onConnectionSync={requestConnectionSync}
+              onDelete={(connection) => setModal({ type: "delete", connection })}
+              onForget={async (connection) => {
+                try {
+                  await api(`/connections/${connection.id}/forget`, {
+                    method: "POST",
+                    body: {},
+                  });
+                  await refresh();
+                  setToast("פרטי הכניסה נמחקו");
+                } catch (e) {
+                  setError(e.message);
+                }
+              }}
               onConnect={() => setModal({ type: "connect" })}
-              onAccounts={() => navigate("accounts")}
               notify={setToast}
               onError={setError}
             />
@@ -2783,17 +2739,26 @@ function MfaModal({ job, demo, connection, onSubmit, onCancel }) {
   );
 }
 function Settings({
+  tab,
+  setTab,
   settings,
   setSettings,
   user,
   live,
+  data,
+  providers,
+  jobs,
+  latestRuns,
+  updatingCardId,
+  onCardEnabledChange,
+  onConnectionSync,
+  onDelete,
+  onForget,
   onConnect,
-  onAccounts,
   notify,
   onError,
 }) {
-  const [tab, setTab] = useState("sync"),
-    [draft, setDraft] = useState(settings),
+  const [draft, setDraft] = useState(settings),
     [saving, setSaving] = useState(false);
   useEffect(() => setDraft(settings), [settings]);
   return (
@@ -2801,7 +2766,7 @@ function Settings({
       <div className="settings-nav">
         {[
           ["sync", RefreshCw, "העדפות סנכרון"],
-          ["connections", Link2, "חיבורים"],
+          ["accounts", Wallet, "חשבונות וכרטיסים"],
           ["security", ShieldCheck, "אבטחה וחשבון"],
           ["architecture", Database, "אחסון והתחברות"],
         ].map(([id, Icon, name]) => (
@@ -2943,29 +2908,45 @@ function Settings({
             </form>
           </>
         )}
-        {tab === "connections" && (
+        {tab === "accounts" && (
           <>
             <div className="panel-heading">
               <div>
                 <h2>הבנקים והכרטיסים שלכם</h2>
-                <p>כל חיבור מקבל סנכרון נפרד והיסטוריית תנועות משלו.</p>
+                <p>ניהול חיבורים, סנכרון ובחירת כרטיסים לייבוא</p>
               </div>
-              <Link2 size={23} />
+              <Wallet size={23} />
             </div>
-            <div className="settings-body">
+            <div className="settings-body settings-accounts-body">
               <div className="info-note">
-                <Landmark size={22} />
-                <p>
-                  ניתן לחבר בנקים וחברות אשראי שנתמכים ב־israeli-bank-scrapers.
-                  חיבור שהוסף לא נחשב מסונכרן עד שהבנק מחזיר נתונים.
-                </p>
+                <ShieldCheck size={19} />
+                <div>
+                  <strong>החיבור משמש לקריאת נתונים בלבד</strong>
+                  <p>הסנכרון לא מבצע העברות או תשלומים. ייתכן שהבנק יבקש קוד אימות במהלך ההתחברות.</p>
+                </div>
               </div>
-              <div className="modal-actions">
-                <button className="button primary" onClick={onConnect}>
-                  <Plus size={17} /> חיבור חשבון חדש
-                </button>
-                <button className="button white" onClick={onAccounts}>
-                  ניהול החיבורים
+              <div className="connection-grid settings-connection-grid">
+                {data.connections.map((connection) => (
+                  <ConnectionCard
+                    key={connection.id}
+                    connection={connection}
+                    accounts={data.accounts}
+                    transactions={data.transactions}
+                    providers={providers}
+                    jobs={jobs}
+                    lastRun={latestRuns.get(connection.id)}
+                    showCardSelection
+                    updatingCardId={updatingCardId}
+                    onCardEnabledChange={onCardEnabledChange}
+                    onSync={() => onConnectionSync(connection)}
+                    onDelete={() => onDelete(connection)}
+                    onForget={connection.remembered ? () => onForget(connection) : null}
+                  />
+                ))}
+                <button className="add-account-tile large" onClick={onConnect}>
+                  <span><Plus size={24} /></span>
+                  <strong>מחברים חשבון נוסף</strong>
+                  <small>בחרו בנק או חברת אשראי</small>
                 </button>
               </div>
             </div>

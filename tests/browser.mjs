@@ -5,6 +5,10 @@ import { readMizrahiBalance } from "../server/mizrahi-balance.js";
 import { formatMoney } from "../shared/currency.js";
 
 const url = process.env.TEST_URL || "http://localhost:3002";
+async function openAccounts(page) {
+  await page.locator("nav").getByRole("button", { name: "הגדרות", exact: true }).click();
+  await page.locator(".settings-nav").getByRole("button", { name: "חשבונות וכרטיסים" }).click();
+}
 mkdirSync("test-results", { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
@@ -47,6 +51,8 @@ try {
     !(await cardRecent.locator("tbody").textContent()).includes("בנק הפועלים"),
   );
   assert.equal(await page.getByText("התמונה המלאה מתחילה כאן").count(), 0);
+  assert.equal(await page.getByText("ניווט", { exact: true }).count(), 0);
+  assert.equal(await page.locator("nav").getByRole("button", { name: "חשבונות וכרטיסים" }).count(), 0);
   await bankRecent.getByRole("button", { name: "לכל תנועות הבנק" }).click();
   assert.equal(await page.getByRole("tab", { name: "תנועות בנק" }).getAttribute("aria-selected"), "true");
   assert.ok(!(await page.locator("tbody").textContent()).includes("max"));
@@ -93,12 +99,9 @@ try {
     "PASS: sync preferences persist through reload and session restoration",
   );
 
+  await openAccounts(page);
   await page
-    .locator("nav")
-    .getByRole("button", { name: /חשבונות וכרטיסים/ })
-    .click();
-  await page
-    .getByRole("button", { name: "חיבור חשבון חדש", exact: true })
+    .getByRole("button", { name: /מחברים חשבון נוסף/ })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("בנק או חברת אשראי").selectOption("leumi");
@@ -223,12 +226,9 @@ try {
     async () => await (await fetch("/api/session")).json(),
   );
   if (session.liveEnabled) {
+    await openAccounts(login);
     await login
-      .locator("nav")
-      .getByRole("button", { name: /חשבונות וכרטיסים/ })
-      .click();
-    await login
-      .getByRole("button", { name: "חיבור חשבון חדש", exact: true })
+      .getByRole("button", { name: /מחברים חשבון נוסף/ })
       .click();
     const connectionForm = login.getByRole("dialog");
     await connectionForm.getByLabel("בנק או חברת אשראי").selectOption("leumi");
@@ -338,7 +338,7 @@ try {
       currency: "ILS", status: "completed", amount: -30000 },
   );
   await page.reload();
-  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  await openAccounts(page);
   const paymentCard = page.locator(".connection-card").filter({ hasText: "כרטיס חיוב לבדיקה" });
   assert.equal(await paymentCard.locator(".connection-value > div").first().locator("strong").textContent(), formatMoney(16000));
   assert.match(await paymentCard.textContent(), /אומדן חלקי/);
@@ -788,13 +788,13 @@ try {
     "PASS: Mizrahi header balance, genuine zero, iframe ledger fallback, and credit-limit exclusion",
   );
   await page.reload();
-  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  await openAccounts(page);
   const maxCard = page.locator(".connection-grid .connection-card").filter({ hasText: "כרטיס האשראי שלי" });
   const importChoice = maxCard.getByRole("checkbox", { name: "לייבא כרטיס זה" });
   await importChoice.click();
   await maxCard.getByText("לא מיובא").waitFor();
   await page.reload();
-  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  await openAccounts(page);
   const disabledMaxCard = page.locator(".connection-grid .connection-card").filter({ hasText: "כרטיס האשראי שלי" });
   assert.equal(await disabledMaxCard.getByRole("checkbox").isChecked(), false);
   await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
