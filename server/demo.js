@@ -40,7 +40,7 @@ export function demoAccounts(provider) {
       txns.push({
         identifier: `demo-${provider}-${m}-${day}`,
         date: date(m, day),
-        processedDate: date(m, day),
+        processedDate: !bank && m === 0 ? date(-1, 10) : date(m, day),
         description,
         chargedAmount: Math.round(amount * factor * 100) / 100,
         originalAmount: amount,

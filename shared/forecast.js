@@ -141,6 +141,28 @@ export function nextKnownCardPayment(account, transactions, today) {
   return { amount: Math.max(0, amount), date, estimated: true };
 }
 
+// The dashboard lists one next debit per enabled card. A dated issuer total
+// takes precedence over its component transactions, and cards without a known
+// debit stay outside the sum instead of silently contributing zero.
+export function upcomingCardCharges(accounts, transactions, today) {
+  const cards = accounts.filter((account) => account.enabled !== false);
+  const charges = cards.flatMap((account) => {
+    const payment = nextKnownCardPayment(account, transactions, today);
+    return payment ? [{ account, ...payment }] : [];
+  }).sort((a, b) => a.date.localeCompare(b.date) ||
+    String(a.account.number || "").localeCompare(String(b.account.number || "")));
+  const totals = new Map();
+  for (const charge of charges)
+    totals.set(charge.account.currency,
+      (totals.get(charge.account.currency) || 0) + charge.amount);
+  return {
+    charges,
+    totals: [...totals].map(([currency, amount]) => ({ currency, amount })),
+    unknownCount: cards.length - charges.length,
+    partial: cards.length > charges.length || charges.some((charge) => charge.estimated),
+  };
+}
+
 export function cardForecastForMonth(accounts, month, unavailableCards = false, transactions = []) {
   const monthKey = month.slice(0, 7);
   let amount = 0;

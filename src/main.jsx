@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
-import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth, upcomingCardCharges } from "../shared/forecast.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -832,16 +832,6 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-tip">
-            <span className="tip-icon">
-              <Sparkles size={21} />
-            </span>
-            <strong>התמונה המלאה מתחילה כאן</strong>
-            <p>חברו את כל החשבונות וגלו לאן הכסף שלכם הולך.</p>
-            <button onClick={() => setModal({ type: "connect" })}>
-              חיבור חשבון נוסף <ArrowUpLeft size={15} />
-            </button>
-          </div>
           <button className="help-button" onClick={() => setHelp(true)}>
             <CircleHelp size={18} /> עזרה ומידע
           </button>
@@ -1170,17 +1160,20 @@ function App() {
                 </div>
               </div>
               <div className="recent-transactions">
-                {["bank", "card"].map((kind) => (
-                  <Transactions
-                    key={kind}
-                    sourceKind={kind}
-                    data={data}
-                    providers={providerMap}
-                    compact
-                    hidden={hidden}
-                    onViewAll={() => navigate("transactions", kind)}
-                  />
-                ))}
+                <Transactions
+                  sourceKind="bank"
+                  data={data}
+                  providers={providerMap}
+                  compact
+                  hidden={hidden}
+                  onViewAll={() => navigate("transactions", "bank")}
+                />
+                <UpcomingCardCharges
+                  data={data}
+                  providers={providerMap}
+                  hidden={hidden}
+                  onViewAll={() => navigate("transactions", "card")}
+                />
               </div>
             </>
           )}
@@ -2070,6 +2063,70 @@ function ConnectionCard({
   );
 }
 
+function UpcomingCardCharges({ data, providers, hidden, onViewAll }) {
+  const cardAccounts = data.accounts.filter((account) =>
+    account.enabled !== false && providers[account.provider]?.kind === "card");
+  const { charges, totals, unknownCount, partial } = upcomingCardCharges(
+    cardAccounts, data.transactions, bankDate(new Date()),
+  );
+  return (
+    <section className="panel upcoming-card-charges" aria-label="חיובים קרובים בכרטיסי האשראי">
+      <div className="panel-heading">
+        <div>
+          <h2>חיובים קרובים בכרטיסי האשראי <span className="count">{charges.length}</span></h2>
+          <p>החיוב הבא הידוע של כל כרטיס שנבחר לייבוא</p>
+        </div>
+        <button className="text-button" onClick={onViewAll}>
+          לכל תנועות האשראי <ArrowLeft size={15} />
+        </button>
+      </div>
+      {charges.length ? (
+        <>
+          <div className="upcoming-card-summary">
+            <span>סך החיובים הקרובים הידועים</span>
+            <div className="upcoming-card-totals">
+              {totals.map(({ currency, amount }) => (
+                <strong key={currency}><bdi>{hidden ? "••••••" : shekel(amount, currency)}</bdi></strong>
+              ))}
+            </div>
+            {(partial || data.truncated) && (
+              <small>אומדן חלקי: {unknownCount > 0 ? `${unknownCount} כרטיסים ללא חיוב עתידי ידוע. ` : ""}חיובים משוערים עשויים להשתנות.</small>
+            )}
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>כרטיס</th><th>מועד חיוב</th><th>מקור הסכום</th><th className="amount-head">חיוב קרוב</th></tr></thead>
+              <tbody>
+                {charges.map(({ account, amount, date, estimated }) => (
+                  <tr key={account.id}>
+                    <td>
+                      <div className="table-account">
+                        <Logo provider={account.provider} size="tiny" />
+                        <span>{providers[account.provider]?.name || account.provider}<small>••{account.number.slice(-4)}</small></span>
+                      </div>
+                    </td>
+                    <td className="date-cell">{formatDate(date)}</td>
+                    <td><span className={`status-pill ${estimated ? "projected" : ""}`}><i />{estimated ? "אומדן מתנועות" : "חיוב מסונכרן"}</span></td>
+                    <td className="amount-cell"><bdi>{hidden ? "•••••" : shekel(amount, account.currency)}</bdi></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <Empty
+          icon={CalendarDays}
+          title={cardAccounts.length ? "אין חיובים עתידיים ידועים" : "אין כרטיסים מיובאים"}
+          description={cardAccounts.length
+            ? "לא נמצא חיוב מתוארך בסנכרון האחרון. הסכום עדיין לא ידוע."
+            : "בחרו כרטיס לייבוא כדי לראות את החיוב הקרוב שלו."}
+        />
+      )}
+    </section>
+  );
+}
+
 function Transactions({
   data,
   providers,
@@ -2121,9 +2178,7 @@ function Transactions({
   ];
   const categories = [...new Set(sourceTransactions.map((t) => t.category))];
   const panelTitle = compact
-    ? kind === "bank"
-      ? "התנועות האחרונות בבנק"
-      : "התנועות האחרונות בכרטיסי האשראי"
+    ? "התנועות האחרונות בבנק"
     : kind === "bank" ? "תנועות בנק" : "תנועות בכרטיסי אשראי";
   const filtered = useMemo(
     () =>

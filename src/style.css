@@ -345,48 +345,6 @@ button .spin {
   margin-top: auto;
   padding-top: 30px;
 }
-.sidebar-tip {
-  border: 1px solid #f0edf8;
-  background: linear-gradient(125deg, #faf8ff, #f5f3fc);
-  padding: 16px 12px 12px;
-  border-radius: 11px;
-  position: relative;
-  overflow: hidden;
-}
-.sidebar-tip:after {
-  content: "";
-  position: absolute;
-  width: 70px;
-  height: 70px;
-  left: -15px;
-  top: -30px;
-  border: 15px solid #ede7fb70;
-  border-radius: 50%;
-}
-.tip-icon {
-  color: #8e75d8;
-  display: block;
-  margin-bottom: 10px;
-}
-.sidebar-tip strong {
-  font-size: 11px;
-}
-.sidebar-tip p {
-  font-size: 10px;
-  line-height: 1.9;
-  color: #9991ad;
-  margin: 6px 0 13px;
-  max-width: 145px;
-}
-.sidebar-tip button {
-  width: 100%;
-  padding: 8px 4px;
-  border: 1px solid #e9e3f8;
-  border-radius: 7px;
-  background: white;
-  color: #8c72d2;
-  font-size: 10px;
-}
 .help-button {
   border: 0;
   background: none;
@@ -1532,6 +1490,30 @@ button .spin {
 .recent-transactions {
   display: grid;
   gap: 24px;
+}
+.upcoming-card-charges .panel-heading {
+  padding-bottom: 19px;
+}
+.upcoming-card-summary {
+  display: grid;
+  gap: 5px;
+  padding: 0 23px 20px;
+  color: #9294a5;
+  font-size: 10px;
+}
+.upcoming-card-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.upcoming-card-totals strong {
+  color: #282b3c;
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
+}
+.upcoming-card-summary small {
+  color: #9d90ae;
+  line-height: 1.6;
 }
 .transactions .panel-heading {
   padding-bottom: 19px;
@@ -2811,15 +2793,6 @@ tbody tr:hover {
     height: 34px;
     border-radius: 10px;
   }
-  .sidebar-tip {
-    padding: 13px 10px;
-  }
-  .sidebar-tip strong {
-    font-size: 10px;
-  }
-  .sidebar-tip p {
-    font-size: 9px;
-  }
   .sidebar nav > button {
     font-size: 11px;
     padding: 9px 10px;
@@ -2981,15 +2954,6 @@ tbody tr:hover {
   }
   .sidebar nav > button {
     font-size: 13px;
-  }
-  .sidebar-tip strong {
-    font-size: 12px;
-  }
-  .sidebar-tip p {
-    font-size: 11px;
-  }
-  .sidebar-tip button {
-    font-size: 11px;
   }
   .main-shell {
     margin-right: 0;

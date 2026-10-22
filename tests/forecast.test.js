@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardForecastForMonth, estimatedClosingBalance, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, estimatedClosingBalance, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth, upcomingCardCharges } from "../shared/forecast.js";
 
 test("closing balance adds the current bank balance once for every independently selected month", () => {
   const base = { openingBalance: 192_140, income: 1_900_000, mortgage: 666_730 };
@@ -133,6 +133,34 @@ test("Isracard's credit-line usage is never mistaken for the next payment", () =
   assert.deepEqual(nextKnownCardPayment({ ...account, next_charge: 18_000, next_charge_date: "2026-11-10" }, transactions, "2026-10-22"), {
     amount: 18_000, date: "2026-11-10", estimated: false,
   });
+});
+
+test("upcoming card panel totals each selected card's next dated bill once", () => {
+  const accounts = [
+    { id: "cal", number: "4814", currency: "ILS", next_charge: 541_786, next_charge_date: "2026-11-02" },
+    { id: "isracard", number: "0706", currency: "ILS", balance: -3_277_719 },
+    { id: "unknown", number: "2421", currency: "ILS", balance: -1_239_192 },
+    { id: "excluded", number: "0936", currency: "ILS", enabled: false, next_charge: 78800, next_charge_date: "2026-11-10" },
+  ];
+  const transactions = [
+    { account_id: "cal", currency: "ILS", status: "completed", processed_date: "2026-11-02", amount: -100_000 },
+    { account_id: "isracard", currency: "ILS", status: "completed", processed_date: "2026-11-10", amount: -12_000 },
+    { account_id: "isracard", currency: "ILS", status: "completed", processed_date: "2026-11-10", amount: -5_000 },
+    { account_id: "isracard", currency: "ILS", status: "completed", processed_date: "2026-11-10", amount: 1_000 },
+    { account_id: "isracard", currency: "ILS", status: "completed", processed_date: "2026-12-10", amount: -30_000 },
+    { account_id: "isracard", currency: "ILS", status: "pending", processed_date: "2026-11-10", amount: -900_000 },
+  ];
+  const result = upcomingCardCharges(accounts, transactions, "2026-10-22");
+  assert.deepEqual(result.charges.map(({ account, amount, date, estimated }) =>
+    ({ card: account.number, amount, date, estimated })), [
+    { card: "4814", amount: 541_786, date: "2026-11-02", estimated: false },
+    { card: "0706", amount: 16_000, date: "2026-11-10", estimated: true },
+  ]);
+  assert.deepEqual(result.totals, [{ currency: "ILS", amount: 557_786 }]);
+  assert.equal(result.unknownCount, 1);
+  assert.equal(result.partial, true);
+  assert.deepEqual(upcomingCardCharges([accounts[2]], transactions, "2026-10-22").totals, [],
+    "credit-line usage alone must never become a zero or estimated payment");
 });
 
 test("dated card bill rows replace speculative installments for that card and month", () => {

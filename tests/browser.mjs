@@ -25,20 +25,19 @@ try {
     .getByRole("button", { name: "כניסה להדגמה עם נתונים לדוגמה" })
     .click();
   await page.getByRole("heading", { name: "הכסף שלכם, בתמונה אחת." }).waitFor();
-  await page.waitForFunction(
-    () =>
-      document.querySelectorAll(".recent-transactions tbody tr").length === 10,
-  );
   const bankRecent = page.getByRole("region", {
     name: "התנועות האחרונות בבנק",
     exact: true,
   });
   const cardRecent = page.getByRole("region", {
-    name: "התנועות האחרונות בכרטיסי האשראי",
+    name: "חיובים קרובים בכרטיסי האשראי",
     exact: true,
   });
+  await bankRecent.locator("tbody tr").first().waitFor();
+  await cardRecent.locator("tbody tr").first().waitFor();
   assert.equal(await bankRecent.locator("tbody tr").count(), 5);
-  assert.equal(await cardRecent.locator("tbody tr").count(), 5);
+  assert.equal(await cardRecent.locator("tbody tr").count(), 1);
+  assert.ok((await cardRecent.locator(".upcoming-card-totals").textContent()).includes("₪"));
   assert.ok(
     (await bankRecent.locator("tbody").textContent()).includes("בנק הפועלים"),
   );
@@ -47,6 +46,7 @@ try {
   assert.ok(
     !(await cardRecent.locator("tbody").textContent()).includes("בנק הפועלים"),
   );
+  assert.equal(await page.getByText("התמונה המלאה מתחילה כאן").count(), 0);
   await bankRecent.getByRole("button", { name: "לכל תנועות הבנק" }).click();
   assert.equal(await page.getByRole("tab", { name: "תנועות בנק" }).getAttribute("aria-selected"), "true");
   assert.ok(!(await page.locator("tbody").textContent()).includes("max"));
@@ -64,7 +64,7 @@ try {
     .getByRole("button", { name: "סקירה כללית", exact: true })
     .click();
   console.log(
-    "PASS: separate bank/card recent panels and scoped view-all navigation",
+    "PASS: bank activity and upcoming card charges have separate panels and navigation",
   );
   await page.waitForTimeout(750);
   await page.screenshot({
@@ -503,13 +503,14 @@ try {
   assert.equal(
     await page
       .getByRole("region", {
-        name: "התנועות האחרונות בכרטיסי האשראי",
+        name: "חיובים קרובים בכרטיסי האשראי",
         exact: true,
       })
       .locator("tbody tr")
       .count(),
-    2,
+    0,
   );
+  await cardRecent.getByText("אין חיובים עתידיים ידועים").waitFor();
   fixture.transactions = [
     { ...cardPurchase, id: "synthetic-november-charge", description: "NOV_CHARGE", date: "2026-10-17", processed_date: "2026-11-02", status: "completed" },
     { ...cardPurchase, id: "synthetic-december-charge", description: "DEC_CHARGE", date: "2026-10-17", processed_date: "2026-12-02", status: "completed" },
@@ -677,6 +678,9 @@ try {
     return route.fulfill({ json: forecastSettings });
   });
   await page.reload();
+  await cardRecent.getByText("סך החיובים הקרובים הידועים").waitFor();
+  assert.equal(await cardRecent.locator("tbody tr").count(), 2);
+  assert.equal(await cardRecent.locator(".upcoming-card-totals strong").textContent(), formatMoney(512825));
   const forecast = page.getByRole("region", { name: "תחזית תזרים" });
   await forecast.getByText("חיובי כרטיסים צפויים · נובמבר 2026").waitFor();
   const monthPicker = forecast.getByLabel("חודש התחזית");
