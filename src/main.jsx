@@ -2760,6 +2760,7 @@ function AiAssistant({ userId }) {
     api("/ai/status").then((value) => {
       if (!active) return;
       setStatus(value);
+      if (value.error) setError(value.error.message);
       if (value.connected) return api("/ai/models").then((items) => {
         if (active) { setModels(items); setModel(items[0]?.id || ""); }
       });

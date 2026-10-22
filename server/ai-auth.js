@@ -1,5 +1,6 @@
-import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { createLocalJWKSet, jwtVerify } from "jose";
 
 const issuer = "https://auth.openai.com";
 const resource = "https://api.openai.com/v1";
@@ -12,30 +13,27 @@ const jwksEndpoint = `${issuer}/.well-known/jwks.json`;
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
 export async function verifyIdentity(idToken, clientId, nonce, fetcher = fetch) {
-  const parts = idToken?.split(".");
-  if (parts?.length !== 3) throw fail("אימות ChatGPT נכשל");
-  let header, payload;
-  try {
-    header = JSON.parse(Buffer.from(parts[0], "base64url"));
-    payload = JSON.parse(Buffer.from(parts[1], "base64url"));
-  } catch {
-    throw fail("אימות ChatGPT נכשל");
-  }
-  if (header.alg !== "RS256" || typeof header.kid !== "string")
-    throw fail("שיטת אימות ChatGPT אינה נתמכת");
+  if (typeof idToken !== "string") throw fail("OpenAI לא החזיר אסימון זיהוי לחשבון");
   const response = await fetcher(jwksEndpoint, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw fail("לא ניתן לאמת את חשבון ChatGPT", 502);
-  const { keys } = await response.json();
-  const jwk = keys?.find((key) => key.kid === header.kid && key.kty === "RSA" && (!key.use || key.use === "sig"));
-  if (!jwk || !verify("RSA-SHA256", Buffer.from(`${parts[0]}.${parts[1]}`), createPublicKey({ key: jwk, format: "jwk" }), Buffer.from(parts[2], "base64url")))
-    throw fail("אימות ChatGPT נכשל");
-  const now = Math.floor(Date.now() / 1000);
-  if (payload.iss !== issuer || payload.aud !== clientId || payload.nonce !== nonce ||
-      typeof payload.sub !== "string" || !payload.sub ||
-      !Number.isInteger(payload.iat) || payload.iat > now + 5 ||
-      !Number.isInteger(payload.exp) || payload.exp <= now - 5 ||
-      (payload.nbf !== undefined && payload.nbf > now + 5))
-    throw fail("אימות ChatGPT נכשל");
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(idToken, createLocalJWKSet(await response.json()), {
+      issuer, audience: clientId, algorithms: ["RS256"],
+      requiredClaims: ["sub", "exp", "iat", "nonce"], clockTolerance: 5,
+    }));
+  } catch (error) {
+    const detail = error.code === "ERR_JWT_EXPIRED" ? "אסימון הזיהוי פג"
+      : error.claim === "aud" ? "אסימון הזיהוי אינו מיועד לחיבור Shklops הזה"
+      : error.claim === "iss" ? "מנפיק אסימון הזיהוי אינו תואם ל־OpenAI"
+      : error.code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED" ? "חתימת אסימון הזיהוי אינה תקינה"
+      : error.code === "ERR_JWKS_NO_MATCHING_KEY" ? "מפתח החתימה לא נמצא אצל OpenAI"
+      : "אסימון הזיהוי שהתקבל אינו תקין";
+    throw fail(`אימות ChatGPT נכשל: ${detail}. נסו להתחבר שוב.`);
+  }
+  if (payload.nonce !== nonce) throw fail("אימות ChatGPT נכשל: קוד האימות אינו תואם לבקשה. נסו להתחבר שוב.");
+  if (typeof payload.sub !== "string" || !payload.sub || payload.iat > Math.floor(Date.now() / 1000) + 5)
+    throw fail("אימות ChatGPT נכשל: פרטי הזיהוי אינם תקינים");
   return { subject: payload.sub, email: typeof payload.email === "string" ? payload.email : null };
 }
 
@@ -45,11 +43,13 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
   const hostId = existingHost?.value || `urn:uuid:${randomUUID()}`;
   if (!existingHost) db.prepare("INSERT INTO ai_meta(key,value) VALUES('host_id',?)").run(hostId);
   const callbacks = new Map();
+  const lastErrors = new Map();
   const refreshing = new Map();
   const row = (userId) => db.prepare("SELECT * FROM ai_connections WHERE user_id=?").get(userId);
   const status = (userId) => {
     const connection = row(userId);
-    return { connected: Boolean(connection?.credentials), email: connection?.email || null };
+    return { connected: Boolean(connection?.credentials), email: connection?.email || null,
+      ...(lastErrors.has(userId) ? { error: lastErrors.get(userId) } : {}) };
   };
 
   async function exchange(body) {
@@ -59,9 +59,13 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
       body: new URLSearchParams(body),
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) throw fail(response.status === 400 || response.status === 401
-      ? "יש להתחבר מחדש ל־ChatGPT" : "החיבור ל־ChatGPT נכשל. נסו שוב.",
-    response.status === 400 || response.status === 401 ? 401 : 502);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const allowedCodes = new Set(["invalid_grant", "invalid_client", "invalid_request", "invalid_scope", "access_denied", "temporarily_unavailable", "unsupported_grant_type"]);
+      const code = allowedCodes.has(body.error) ? body.error : "token_exchange_failed";
+      throw fail(`OpenAI דחה את החלפת קוד האישור (${code}, HTTP ${response.status}). נסו להתחבר שוב.`,
+        response.status === 400 || response.status === 401 ? 401 : 502);
+    }
     return response.json();
   }
 
@@ -73,6 +77,7 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
     if (newAccount && row(userId)?.credentials)
       throw fail("נתקו את חיבור ChatGPT הקיים לפני בחירת חשבון אחר");
     callbacks.get(userId)?.cancel();
+    lastErrors.delete(userId);
     const previous = newAccount ? null : row(userId);
     const clientId = previous?.client_id || "dynamic_agent_client";
     const state = randomBytes(32).toString("base64url");
@@ -93,12 +98,16 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
         return;
       }
       used = true;
+      let stage = "callback";
       try {
         if (params.get("error")) throw fail("החיבור ל־ChatGPT בוטל");
         const issuedClient = previous?.client_id || params.get("client_id");
-        if (!issuedClient || issuedClient === "dynamic_agent_client" ||
-            (previous && params.get("client_id") && params.get("client_id") !== previous.client_id) ||
-            !params.get("code")) throw fail("אישור ChatGPT לא הושלם");
+        if (!issuedClient || issuedClient === "dynamic_agent_client")
+          throw fail("OpenAI לא החזיר מזהה חיבור חדש (client_id), ולכן לא ניתן להחליף את קוד האישור.");
+        if (previous && params.get("client_id") && params.get("client_id") !== previous.client_id)
+          throw fail("מזהה החיבור שהוחזר מ־OpenAI אינו תואם לבקשה");
+        if (!params.get("code")) throw fail("OpenAI לא החזיר קוד אישור לחיבור");
+        stage = "token_exchange";
         const tokens = await exchange({
           grant_type: "authorization_code",
           client_id: issuedClient,
@@ -107,12 +116,15 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
           redirect_uri: `http://${callbackHost}:${callback.address().port}${callbackPath}`,
           resource,
         });
+        stage = "identity";
         const identity = await verifyIdentity(tokens.id_token, issuedClient, nonce, fetcher);
         if (previous && identity.subject !== previous.subject)
           throw fail("נבחר חשבון ChatGPT אחר. נתקו את החיבור הקודם ונסו שוב.");
-        if (!new Set(String(tokens.scope || "").split(" ")).has(requiredScope) ||
-            typeof tokens.access_token !== "string" || typeof tokens.refresh_token !== "string")
+        stage = "permission";
+        if (!new Set(String(tokens.scope || "").split(" ")).has(requiredScope))
           throw fail("יש לאשר שימוש בתוכנית ChatGPT כדי לשאול שאלות");
+        if (typeof tokens.access_token !== "string") throw fail("OpenAI לא החזיר אסימון גישה לשימוש בתוכנית");
+        if (typeof tokens.refresh_token !== "string") throw fail("OpenAI לא החזיר הרשאה לחידוש החיבור. נסו לאשר מחדש את החיבור.");
         if (cancelled) throw fail("בקשת החיבור בוטלה");
         const expiresAt = Date.now() + Math.max(60, Number(tokens.expires_in) || 3600) * 1000;
         db.prepare(`INSERT INTO ai_connections(user_id,client_id,subject,email,credentials,expires_at)
@@ -121,7 +133,12 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
           .run(userId, issuedClient, identity.subject, identity.email,
             store.encrypt({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, idToken: tokens.id_token }), expiresAt);
         res.writeHead(302, { Location: `${returnOrigin}/?ai=connected`, "Cache-Control": "no-store" }).end();
-      } catch {
+      } catch (error) {
+        // Keep only a sanitized explanation; never retain codes, tokens or callback URLs.
+        const message = error.status ? error.message
+          : error.name === "TimeoutError" ? "OpenAI לא הגיב בזמן. נסו שוב."
+          : "לא ניתן להשלים את החיבור ל־OpenAI. נסו שוב.";
+        lastErrors.set(userId, { stage, message });
         res.writeHead(302, { Location: `${returnOrigin}/?ai=error`, "Cache-Control": "no-store" }).end();
       } finally {
         clearTimeout(timer);
@@ -180,6 +197,7 @@ export function createAiAuth(store, { fetcher = fetch, callbackHost = "127.0.0.1
   }
 
   async function disconnect(userId) {
+    lastErrors.delete(userId);
     callbacks.get(userId)?.cancel();
     const connection = row(userId);
     if (!connection?.credentials) return { ok: true, revoked: true };

@@ -119,7 +119,7 @@ test("OAuth validates state, signature, audience and nonce before storing encryp
       const nonce = currentNonce;
       const clientId = "oaiapp_test";
       const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key" })).toString("base64url");
-      const payload = Buffer.from(JSON.stringify({ iss: "https://auth.openai.com", aud: clientId,
+      const payload = Buffer.from(JSON.stringify({ iss: "https://auth.openai.com", aud: [clientId],
         sub: "openai-alice", email: "openai@example.com", nonce,
         iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
       const content = `${header}.${payload}`;
@@ -151,6 +151,26 @@ test("OAuth validates state, signature, audience and nonce before storing encryp
   await assert.rejects(verifyIdentity(idToken, "oaiapp_test", "wrong-nonce", fakeFetch));
   const parts = idToken.split(".");
   await assert.rejects(verifyIdentity(`${parts[0]}.${parts[1]}.AA`, "oaiapp_test", currentNonce, fakeFetch));
+});
+
+test("a rejected OAuth exchange reports its safe cause without exposing provider details", async (t) => {
+  const store = fixture(t);
+  const auth = createAiAuth(store, { fetcher: async () => Response.json({
+    error: "invalid_grant", error_description: "do-not-expose-secret-code",
+  }, { status: 400 }) });
+  t.after(() => auth.close());
+  const authorization = new URL(await auth.start("alice", "http://localhost:3002"));
+  const callback = new URL(authorization.searchParams.get("redirect_uri"));
+  callback.searchParams.set("state", authorization.searchParams.get("state"));
+  callback.searchParams.set("code", "private-authorization-code");
+  callback.searchParams.set("client_id", "oaiapp_test");
+  const result = await fetch(callback, { redirect: "manual" });
+  assert.equal(result.status, 302);
+  const status = auth.status("alice");
+  assert.equal(status.connected, false);
+  assert.equal(status.error.stage, "token_exchange");
+  assert.match(status.error.message, /invalid_grant/);
+  assert.doesNotMatch(JSON.stringify(status), /do-not-expose|private-authorization/);
 });
 
 test("AI HTTP routes require a Shklops session and same-origin writes", async (t) => {

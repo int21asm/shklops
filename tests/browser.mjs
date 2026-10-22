@@ -57,6 +57,13 @@ try {
   await page.getByRole("heading", { name: "חברו את תוכנית ChatGPT שלכם" }).waitFor();
   assert.equal(await page.getByRole("button", { name: "המשך עם ChatGPT" }).count(), 1);
   await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: {
+    connected: false, email: null, error: { stage: "token_exchange", message: "OpenAI דחה את החלפת קוד האישור (invalid_grant, HTTP 400)." },
+  } }));
+  await page.locator("nav").getByRole("button", { name: "שאלו את שקלופס" }).click();
+  await page.getByRole("alert").filter({ hasText: "invalid_grant" }).waitFor();
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  await page.unroute("**/api/ai/status");
   await page.route("**/api/ai/status", (route) => route.fulfill({ json: { connected: true, email: "test@example.com" } }));
   await page.route("**/api/ai/models", (route) => route.fulfill({ json: [{ id: "test-model", name: "Test model" }] }));
   await page.route("**/api/ai/ask", (route) => route.fulfill({ json: {
