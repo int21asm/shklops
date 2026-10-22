@@ -618,6 +618,14 @@ try {
     },
     {
       ...bankCredit,
+      id: "synthetic-mortgage-duplicate",
+      date: "2026-09-10",
+      description: "טפחות - לווים",
+      amount: -666730,
+      status: "completed",
+    },
+    {
+      ...bankCredit,
       id: "synthetic-old-card-bill",
       date: "2026-09-12",
       description: "ישראכרט",
@@ -683,6 +691,14 @@ try {
     await forecast.locator(".forecast-result strong").textContent(),
     formatMoney(720445),
   );
+  const mortgageLine = forecast.locator(".forecast-line").filter({ hasText: "משכנתא חודשית" });
+  await mortgageLine.hover();
+  assert.match(await mortgageLine.locator(".forecast-tooltip:visible").textContent(), /רישום זהה נוסף לא נספר/);
+  assert.match(await mortgageLine.locator(".forecast-tooltip:visible").textContent(), /6,667/);
+  await cardLine.hover();
+  assert.match(await cardLine.locator(".forecast-tooltip:visible").textContent(), /חיוב מסונכרן/);
+  await forecast.locator(".forecast-result").hover();
+  assert.match(await forecast.locator(".forecast-result .forecast-tooltip:visible").textContent(), /הכנסה חודשית.*פחות משכנתא.*פחות חיובי כרטיסים/s);
   await monthPicker.selectOption("2026-12-01");
   await forecast.getByText("תרחיש חודשי ל־דצמבר 2026").waitFor();
   assert.equal(

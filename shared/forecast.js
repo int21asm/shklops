@@ -11,6 +11,38 @@ export function monthlyCashflow({ income, mortgage, cardPayments, cardComplete }
   };
 }
 
+const mortgageDescription = /טפחות\s*[-–—־]\s*לווים/i;
+
+// The same mortgage debit can appear twice after overlapping bank snapshots.
+// Keep distinct debits, but count an identical debit on the same account and
+// day only once in the recurring estimate.
+export function mortgageEstimateForMonth(transactions, month) {
+  const matching = transactions.filter((tx) =>
+    tx.currency === "ILS" && tx.status !== "pending" && tx.amount < 0 &&
+    tx.date?.slice(0, 7) === month.slice(0, 7) &&
+    mortgageDescription.test(tx.description || ""));
+  const seen = new Set();
+  const entries = [];
+  let duplicates = 0;
+  for (const tx of matching) {
+    const key = JSON.stringify([
+      tx.account_id, tx.date, tx.amount,
+      tx.description.trim().replace(/\s+/g, " "),
+    ]);
+    if (seen.has(key)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(key);
+    entries.push({ date: tx.date, description: tx.description, amount: -tx.amount });
+  }
+  return {
+    amount: entries.length ? entries.reduce((sum, entry) => sum + entry.amount, 0) : null,
+    entries,
+    duplicates,
+  };
+}
+
 // A full next bill applies only to its dated month. Later months can include
 // known future charges and the remaining payments of observed installments,
 // but must stay partial because new card purchases are unknowable.
@@ -103,6 +135,7 @@ export function cardForecastForMonth(accounts, month, unavailableCards = false, 
   let futureAmount = 0;
   let exactAccounts = 0;
   const dates = [];
+  const breakdown = [];
   const accountIds = new Set(accounts.map((account) => account.id));
   const cardTransactions = transactions.filter(
     (tx) => accountIds.has(tx.account_id) && tx.currency === "ILS" && tx.status === "completed",
@@ -113,6 +146,7 @@ export function cardForecastForMonth(accounts, month, unavailableCards = false, 
       amount += account.next_charge;
       dates.push(account.next_charge_date);
       exactAccounts++;
+      breakdown.push({ accountId: account.id, amount: account.next_charge, source: "scheduled", date: account.next_charge_date, count: 1 });
       continue;
     }
     const posted = cardTransactions.filter(
@@ -129,6 +163,10 @@ export function cardForecastForMonth(accounts, month, unavailableCards = false, 
       .reduce((sum, tx) => sum + tx.amount, 0);
     amount -= signedTotal;
     futureAmount -= signedTotal;
+    breakdown.push({ accountId: account.id, amount: -signedTotal,
+      source: posted.length ? "dated" : rows.length ? "projected" : "unknown",
+      date: posted[0]?.processed_date || rows[0]?.processed_date || null,
+      count: rows.length });
   }
   const complete = !unavailableCards && accounts.length > 0 && exactAccounts === accounts.length;
   return {
@@ -136,5 +174,6 @@ export function cardForecastForMonth(accounts, month, unavailableCards = false, 
     source: complete ? "scheduled" : "partial",
     dates: dates.sort(),
     knownFuture: futureAmount !== 0,
+    breakdown,
   };
 }

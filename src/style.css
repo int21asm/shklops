@@ -876,6 +876,7 @@ button .spin {
   padding: 20px 23px;
 }
 .forecast-result {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -927,6 +928,7 @@ button .spin {
   gap: 12px;
 }
 .forecast-line {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -951,6 +953,44 @@ button .spin {
   font-size: 12px;
   white-space: nowrap;
 }
+.forecast-help-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-start: 3px;
+  color: #8d82c9;
+}
+.forecast-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  min-width: 230px;
+  max-width: min(360px, calc(100vw - 48px));
+  max-height: 280px;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid #ded9ef;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 12px 28px #24203d21;
+  color: #39364d;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: right;
+}
+.forecast-result:hover > .forecast-tooltip,
+.forecast-result:focus-visible > .forecast-tooltip,
+.forecast-line:hover > .forecast-tooltip,
+.forecast-line:focus-visible > .forecast-tooltip {
+  display: block;
+}
+.forecast-tooltip b { display: block; margin-bottom: 5px; }
+.forecast-tooltip ul { margin: 0; padding-inline-start: 16px; }
+.forecast-tooltip li + li { margin-top: 4px; }
+.forecast-result:focus-visible,
+.forecast-line:focus-visible { outline: 2px solid #a898eb; outline-offset: 2px; }
 .forecast-footer {
   display: flex;
   align-items: center;

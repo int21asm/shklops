@@ -1,6 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardForecastForMonth, monthlyCashflow, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+
+test("an identical Mizrahi mortgage row is counted once in each monthly forecast", () => {
+  const base = {
+    account_id: "bank-a", date: "2026-09-10", description: "טפחות - לווים",
+    amount: -666_730, currency: "ILS", status: "completed",
+  };
+  const transactions = [
+    { ...base, id: "first", fingerprint: "source-a" },
+    { ...base, id: "duplicate", fingerprint: "source-b" },
+    { ...base, id: "other-month", date: "2026-10-10" },
+    { ...base, id: "pending", status: "pending" },
+  ];
+  const september = mortgageEstimateForMonth(transactions, "2026-09");
+  assert.equal(september.amount, 666_730);
+  assert.equal(september.entries.length, 1);
+  assert.equal(september.duplicates, 1);
+  assert.equal(monthlyCashflow({ income: 1_900_000, mortgage: september.amount,
+    cardPayments: 1_276_107, cardComplete: false }).amount, -42_837,
+    "₪19,000 − ₪6,667.30 − ₪12,761.07 must not subtract the duplicate mortgage");
+  assert.equal(mortgageEstimateForMonth(transactions, "2026-10").amount, 666_730);
+  assert.equal(mortgageEstimateForMonth(transactions, "2026-08").amount, null);
+});
 
 test("three months use dated bills and remaining installments, without carrying the full bill", () => {
   const income = 1_900_000; // ₪19,000
@@ -115,6 +137,8 @@ test("dated card bill rows replace speculative installments for that card and mo
   assert.equal(november.amount, 500_000,
     "the November bill uses two issuer-dated rows and Cal's exact charge, without old installment projections");
   assert.equal(november.source, "partial");
+  assert.equal(november.breakdown.reduce((sum, card) => sum + card.amount, 0), november.amount);
+  assert.deepEqual(november.breakdown.map((card) => card.source), ["dated", "dated", "scheduled"]);
   assert.equal(monthlyCashflow({ income: 1_900_000, mortgage: 666_730, cardPayments: november.amount, cardComplete: false }).amount, 733_270);
   assert.equal(cardForecastForMonth(cards, "2026-12", false, transactions).amount, 900_000,
     "a month without issuer-dated rows can still estimate remaining installments");

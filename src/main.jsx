@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
-import { cardForecastForMonth, monthlyCashflow, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -124,7 +124,6 @@ const monthAfter = (month, count = 1) => {
   date.setUTCMonth(date.getUTCMonth() + count);
   return date.toISOString().slice(0, 10);
 };
-const mortgageDescription = /טפחות\s*[-–—־]\s*לווים/i;
 const syncFailureMessage = (connection, run) =>
   connection.provider === "isracard" &&
   run?.error === "הבנק דורש שינוי סיסמה. יש להיכנס לאתר הבנק."
@@ -614,20 +613,8 @@ function App() {
   const previousMonth = new Date(`${currentMonthStart}T12:00:00Z`);
   previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
   const previousMonthStart = previousMonth.toISOString().slice(0, 10);
-  const lastMonthDebits = bankTransactions.filter(
-    (t) =>
-      t.currency === "ILS" &&
-      t.status !== "pending" &&
-      t.amount < 0 &&
-      t.date >= previousMonthStart &&
-      t.date < currentMonthStart,
-  );
-  const mortgageTransactions = lastMonthDebits.filter((t) =>
-    mortgageDescription.test(t.description),
-  );
-  const forecastMortgage = mortgageTransactions.length
-    ? mortgageTransactions.reduce((sum, t) => sum - t.amount, 0)
-    : null;
+  const mortgageEstimate = mortgageEstimateForMonth(bankTransactions, previousMonthStart);
+  const forecastMortgage = mortgageEstimate.amount;
   const nextMonthStart = monthAfter(currentMonthStart);
   const forecastMonths = Array.from({ length: 24 }, (_, index) =>
     monthAfter(currentMonthStart, index + 1),
@@ -661,6 +648,11 @@ function App() {
   );
   const forecastCardPayments = selectedCardForecast.amount;
   const cardChargeDates = selectedCardForecast.dates;
+  const cardBreakdown = selectedCardForecast.breakdown.map((item) => {
+    const account = cardAccounts.find((a) => a.id === item.accountId);
+    return { ...item,
+      label: `${providerMap[account?.provider]?.name || account?.provider || "כרטיס"} ••${account?.number?.slice(-4) || ""}` };
+  });
   const forecastPartial = selectedCardForecast.source === "partial";
   const visibleTransactions = bankTransactions.filter(
     (t) => t.date >= rangeStart && t.date <= bankDate(new Date()),
@@ -1113,11 +1105,13 @@ function App() {
               <CashflowForecast
                 monthlyIncome={settings.monthlyIncome || 0}
                 mortgage={forecastMortgage}
+                mortgageEstimate={mortgageEstimate}
                 cardPayments={forecastCardPayments}
                 cardSource={selectedCardForecast.source}
                 forecastPartial={forecastPartial}
                 unavailableCards={unavailableCardConnections.length > 0}
                 cardChargeDates={cardChargeDates}
+                cardBreakdown={cardBreakdown}
                 cardKnownFuture={selectedCardForecast.knownFuture}
                 previousMonth={previousMonthStart}
                 selectedMonth={selectedForecastMonth}
@@ -1527,11 +1521,13 @@ function Stat({ title, value, icon: Icon, hint, detail, featured, tone }) {
 function CashflowForecast({
   monthlyIncome,
   mortgage,
+  mortgageEstimate,
   cardPayments,
   cardSource,
   forecastPartial,
   unavailableCards,
   cardChargeDates,
+  cardBreakdown,
   cardKnownFuture,
   previousMonth,
   selectedMonth,
@@ -1552,6 +1548,38 @@ function CashflowForecast({
     cardComplete: !forecastPartial,
   });
   const projected = cashflow.amount;
+  const shownMoney = (value) => hidden ? "••••••" : shekel(value);
+  const mortgageExplanation = mortgageEstimate.entries.length
+    ? [
+        ...mortgageEstimate.entries.map((entry) =>
+          `${formatDate(`${entry.date}T12:00:00Z`)} · ${entry.description}: ${shownMoney(entry.amount)}`),
+        ...(mortgageEstimate.duplicates
+          ? [`${mortgageEstimate.duplicates} ${mortgageEstimate.duplicates === 1 ? "רישום זהה נוסף לא נספר" : "רישומים זהים נוספים לא נספרו"}`]
+          : []),
+        `סך החיובים הייחודיים מ־${formatMonth(previousMonth)} חוזר בכל חודש תחזית.`,
+      ]
+    : [`לא נמצא חיוב טפחות - לווים ב־${formatMonth(previousMonth)}.`];
+  const cardExplanation = cardBreakdown.length
+    ? [
+        ...cardBreakdown.map((card) => {
+          const source = card.source === "scheduled"
+            ? `חיוב מסונכרן ל־${formatDate(`${card.date}T12:00:00Z`)}`
+            : card.source === "dated"
+              ? `${card.count} תנועות מתוארכות`
+              : card.source === "projected"
+                ? `${card.count} תשלומים צפויים לפי עסקאות קודמות`
+                : "לא נמצא חיוב לחודש זה";
+          return `${card.label}: ${card.source === "unknown" ? "—" : shownMoney(card.amount)} · ${source}`;
+        }),
+        `סך החיובים שזוהו ל־${formatMonth(selectedMonth)}: ${shownMoney(cardPayments)}${forecastPartial ? " · הסכום חלקי" : ""}.`,
+      ]
+    : ["לא נבחרו כרטיסים עם חיוב ידוע לחודש זה."];
+  const resultExplanation = [
+    `הכנסה חודשית: ${monthlyIncome ? shownMoney(monthlyIncome) : "לא הוגדרה"}`,
+    `פחות משכנתא: ${mortgage === null ? "לא ידועה" : shownMoney(mortgage)}`,
+    `פחות חיובי כרטיסים שזוהו: ${forecastPartial && cardPayments === 0 ? "לא ידועים" : shownMoney(cardPayments)}`,
+    `תוצאה ל־${formatMonth(selectedMonth)}: ${projected === null ? "לא ניתן לחשב" : shownMoney(projected)}${forecastPartial ? " · אומדן חלקי" : ""}`,
+  ];
   return (
     <section className="panel forecast-panel" aria-label="תחזית תזרים">
       <div className="panel-heading">
@@ -1575,8 +1603,8 @@ function CashflowForecast({
         </div>
       </div>
       <div className="forecast-content">
-        <div className={`forecast-result ${forecastPartial ? "partial" : ""}`}>
-          <span>{forecastPartial ? "תזרים לפי חיובים זמינים בלבד" : "תזרים נטו בחודש"}</span>
+        <div className={`forecast-result ${forecastPartial ? "partial" : ""}`} tabIndex={0} aria-label="פירוט חישוב התזרים">
+          <span>{forecastPartial ? "תזרים לפי חיובים זמינים בלבד" : "תזרים נטו בחודש"} <CircleHelp className="forecast-help-icon" size={13} aria-hidden="true" /></span>
           <strong
             className={
               projected === null || forecastPartial
@@ -1602,6 +1630,7 @@ function CashflowForecast({
                 : "הכנסה חודשית פחות משכנתא וחיובי כרטיסים לחודש שנבחר."
               : `כדי להציג תחזית, צריך להשלים: ${missing.join(" · ")}.`}
           </p>
+          <ForecastTooltip items={resultExplanation} />
         </div>
         <div className="forecast-breakdown">
           <ForecastLine
@@ -1609,12 +1638,14 @@ function CashflowForecast({
             value={monthlyIncome || null}
             hidden={hidden}
             positive
+            explanation={[`הסכום שהוגדר בהגדרות כהכנסה חודשית קבועה: ${monthlyIncome ? shownMoney(monthlyIncome) : "לא הוגדר"}.`, "אותו סכום משמש לכל חודש תחזית."]}
           />
           <ForecastLine
             label="משכנתא חודשית"
             detail={`לפי חיוב ${formatMonth(previousMonth)}; הנחה לחודש שנבחר`}
             value={mortgage === null ? null : -mortgage}
             hidden={hidden}
+            explanation={mortgageExplanation}
           />
           <ForecastLine
             label={`${cardSource === "partial" ? "חיובי כרטיסים שזוהו" : "חיובי כרטיסים צפויים"} · ${formatMonth(selectedMonth)}`}
@@ -1635,6 +1666,7 @@ function CashflowForecast({
             }
             value={cardSource === "partial" && cardPayments === 0 ? null : cardPayments === 0 ? 0 : -cardPayments}
             hidden={hidden}
+            explanation={cardExplanation}
           />
         </div>
       </div>
@@ -1651,11 +1683,19 @@ function CashflowForecast({
     </section>
   );
 }
-function ForecastLine({ label, detail, value, hidden, positive = false }) {
+function ForecastTooltip({ items }) {
   return (
-    <div className="forecast-line">
+    <div className="forecast-tooltip" role="tooltip">
+      <b>איך חושב?</b>
+      <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul>
+    </div>
+  );
+}
+function ForecastLine({ label, detail, value, hidden, positive = false, explanation }) {
+  return (
+    <div className="forecast-line" tabIndex={0} aria-label={`פירוט חישוב ${label}`}>
       <span>
-        {label}
+        {label} <CircleHelp className="forecast-help-icon" size={12} aria-hidden="true" />
         {detail && <small>{detail}</small>}
       </span>
       <strong dir="ltr">
@@ -1665,6 +1705,7 @@ function ForecastLine({ label, detail, value, hidden, positive = false }) {
             ? "—"
             : `${value > 0 && positive ? "+" : ""}${shekel(value)}`}
       </strong>
+      <ForecastTooltip items={explanation} />
     </div>
   );
 }
