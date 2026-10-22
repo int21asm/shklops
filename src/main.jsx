@@ -1595,7 +1595,7 @@ function CashflowForecast({
             hidden={hidden}
           />
           <ForecastLine
-            label={`חיובי כרטיסים צפויים · ${formatMonth(selectedMonth)}`}
+            label={`${cardSource === "partial" ? "חיובי כרטיסים שזוהו" : "חיובי כרטיסים צפויים"} · ${formatMonth(selectedMonth)}`}
             detail={
               cardSource === "partial"
                   ? cardKnownFuture

@@ -93,3 +93,29 @@ test("Isracard's credit-line usage is never mistaken for the next payment", () =
     amount: 18_000, date: "2026-11-10", estimated: false,
   });
 });
+
+test("dated card bill rows replace speculative installments for that card and month", () => {
+  const cards = [
+    { id: "isracard-a", next_charge: null },
+    { id: "isracard-b", next_charge: null },
+    { id: "cal", next_charge: 300_000, next_charge_date: "2026-11-10" },
+  ];
+  const tx = (account_id, processed_date, amount, installment_group, installment_number, installment_total) => ({
+    account_id, processed_date, amount, installment_group, installment_number,
+    installment_total, currency: "ILS", status: "completed",
+  });
+  const transactions = [
+    tx("isracard-a", "2026-10-10", -500_000, "old-a", 1, 4),
+    tx("isracard-a", "2026-11-10", -120_000, null, null, null),
+    tx("isracard-b", "2026-10-10", -400_000, "old-b", 1, 4),
+    tx("isracard-b", "2026-11-10", -80_000, null, null, null),
+    tx("cal", "2026-11-10", -200_000, null, null, null),
+  ];
+  const november = cardForecastForMonth(cards, "2026-11", false, transactions);
+  assert.equal(november.amount, 500_000,
+    "the November bill uses two issuer-dated rows and Cal's exact charge, without old installment projections");
+  assert.equal(november.source, "partial");
+  assert.equal(monthlyCashflow({ income: 1_900_000, mortgage: 666_730, cardPayments: november.amount, cardComplete: false }).amount, 733_270);
+  assert.equal(cardForecastForMonth(cards, "2026-12", false, transactions).amount, 900_000,
+    "a month without issuer-dated rows can still estimate remaining installments");
+});

@@ -118,7 +118,14 @@ export function cardForecastForMonth(accounts, month, unavailableCards = false, 
     const posted = cardTransactions.filter(
       (tx) => tx.account_id === account.id && tx.processed_date?.slice(0, 7) === monthKey,
     );
-    const signedTotal = [...posted, ...projected.filter((tx) => tx.account_id === account.id)]
+    // The issuer's dated rows are the best available snapshot of that bill.
+    // Projecting old installment rows on top of them can count purchases that
+    // the issuer has already included, and can grossly inflate next month's
+    // charge when installment identifiers change between monthly snapshots.
+    const rows = posted.length
+      ? posted
+      : projected.filter((tx) => tx.account_id === account.id);
+    const signedTotal = rows
       .reduce((sum, tx) => sum + tx.amount, 0);
     amount -= signedTotal;
     futureAmount -= signedTotal;
