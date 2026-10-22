@@ -15,6 +15,8 @@ import { createStore, hash } from "./store.js";
 import { providers, providerById } from "./providers.js";
 import { seedDemo } from "./demo.js";
 import { createJobs } from "./jobs.js";
+import { createAiAuth } from "./ai-auth.js";
+import { createAiChat } from "./ai-chat.js";
 import { normalizeCurrency } from "../shared/currency.js";
 const scrypt = promisify(scryptCallback);
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -56,6 +58,7 @@ export async function createApplication({
   live = process.env.ENABLE_LIVE_SCRAPING === "true",
   production = process.env.NODE_ENV === "production",
   jobsOptions,
+  aiOptions,
   development = false,
 } = {}) {
   if (production && !process.env.CREDENTIAL_KEY)
@@ -65,6 +68,8 @@ export async function createApplication({
   const store = createStore(dataDir),
     { db } = store;
   const jobs = createJobs(store, jobsOptions);
+  const aiAuth = createAiAuth(store, aiOptions);
+  const aiChat = createAiChat(store, aiAuth, aiOptions);
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet({ contentSecurityPolicy: development ? false : undefined }));
@@ -206,6 +211,23 @@ export async function createApplication({
     res.json({ ok: true });
   });
   app.get("/api/providers", (_req, res) => res.json(providers));
+  const aiLimit = rateLimit({ windowMs: 60000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false,
+    message: { error: "יותר מדי שאלות. נסו שוב בעוד דקה." } });
+  app.get("/api/ai/status", (req, res) => res.json(aiAuth.status(req.user.id)));
+  app.post("/api/ai/connect", aiLimit, async (req, res) => {
+    const { newAccount } = z.object({ newAccount: z.boolean().optional() }).strict().parse(req.body);
+    const origin = process.env.APP_ORIGIN || `http://${req.get("host")}`;
+    res.json({ url: await aiAuth.start(req.user.id, origin, { newAccount }) });
+  });
+  app.post("/api/ai/disconnect", aiLimit, async (req, res) => res.json(await aiAuth.disconnect(req.user.id)));
+  app.get("/api/ai/models", aiLimit, async (req, res) => res.json(await aiChat.models(req.user.id)));
+  app.post("/api/ai/ask", aiLimit, async (req, res) => {
+    const { question, model, history } = z.object({ question: z.string().trim().min(2).max(1000),
+      model: z.string().max(100).optional(), history: z.array(z.object({
+        question: z.string().max(1000), answer: z.string().max(4000),
+      }).strict()).max(4).optional() }).strict().parse(req.body);
+    res.json(await aiChat.ask(req.user.id, question, model, history));
+  });
   app.get("/api/settings", (req, res) =>
     res.json({
       monthlyIncome: 0,
@@ -430,6 +452,7 @@ export async function createApplication({
     jobs,
     close: async () => {
       jobs.shutdown();
+      aiAuth.close();
       await vite?.close();
       store.close();
     },

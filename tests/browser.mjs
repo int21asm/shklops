@@ -53,6 +53,29 @@ try {
   assert.equal(await page.getByText("התמונה המלאה מתחילה כאן").count(), 0);
   assert.equal(await page.getByText("ניווט", { exact: true }).count(), 0);
   assert.equal(await page.locator("nav").getByRole("button", { name: "חשבונות וכרטיסים" }).count(), 0);
+  await page.locator("nav").getByRole("button", { name: "שאלו את שקלופס" }).click();
+  await page.getByRole("heading", { name: "חברו את תוכנית ChatGPT שלכם" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "המשך עם ChatGPT" }).count(), 1);
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { connected: true, email: "test@example.com" } }));
+  await page.route("**/api/ai/models", (route) => route.fulfill({ json: [{ id: "test-model", name: "Test model" }] }));
+  await page.route("**/api/ai/ask", (route) => route.fulfill({ json: {
+    answer: "היתרה הצפויה היא 1,493.03 ₪, לפי הנתונים הזמינים.",
+    sources: [{ tool: "finance.cashflow_forecast", data: { month: "2026-11", openingBankBalance: 1921.4,
+      monthlyIncome: 19000, recurringMortgage: 6667.3, knownCardCharges: 12761.07,
+      estimatedClosingBalance: 1493.03, partial: true } }],
+  } }));
+  await page.locator("nav").getByRole("button", { name: "שאלו את שקלופס" }).click();
+  await page.getByLabel("השאלה שלכם").fill("איך חושבה תחזית התזרים?");
+  await page.getByRole("button", { name: "שליחה", exact: true }).click();
+  await page.locator(".ai-answer").filter({ hasText: "1,493.03" }).waitFor();
+  await page.getByText("הנתונים ששימשו לתשובה", { exact: true }).click();
+  assert.ok((await page.locator(".ai-sources").textContent()).includes("משכנתא"));
+  await page.screenshot({ path: "test-results/assistant-desktop.png", fullPage: true });
+  await page.unroute("**/api/ai/status");
+  await page.unroute("**/api/ai/models");
+  await page.unroute("**/api/ai/ask");
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
   await bankRecent.getByRole("button", { name: "לכל תנועות הבנק" }).click();
   assert.equal(await page.getByRole("tab", { name: "תנועות בנק" }).getAttribute("aria-selected"), "true");
   assert.ok(!(await page.locator("tbody").textContent()).includes("max"));

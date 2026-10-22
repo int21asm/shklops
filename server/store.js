@@ -35,6 +35,8 @@ export function createStore(directory) {
     CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE, number TEXT NOT NULL, currency TEXT NOT NULL, balance INTEGER, next_charge INTEGER, next_charge_date TEXT, UNIQUE(connection_id,number,currency));
     CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, fingerprint TEXT NOT NULL, date TEXT NOT NULL, description TEXT NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, category TEXT NOT NULL, memo TEXT, UNIQUE(account_id,fingerprint));
     CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, connection_id TEXT REFERENCES connections(id) ON DELETE CASCADE, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, count INTEGER DEFAULT 0, error TEXT);
+    CREATE TABLE IF NOT EXISTS ai_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS ai_connections (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, client_id TEXT NOT NULL, subject TEXT NOT NULL, email TEXT, credentials TEXT, expires_at INTEGER);
     CREATE INDEX IF NOT EXISTS connections_owner ON connections(user_id);
     CREATE INDEX IF NOT EXISTS tx_date ON transactions(date);
   `);

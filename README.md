@@ -15,6 +15,7 @@ A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `
 - Manual sync jobs, progress, cancellation, timeout handling, transactional imports, and duplicate detection.
 - An MFA dialog that resumes the waiting scraper callback. ONE ZERO exposes this callback in the current library. Other providers do **not** automatically gain MFA support; unsupported bank challenges report failure and may require action on the bank's website.
 - An isolated demo account per browser session, synthetic data, and an explicit simulated MFA flow. No bank is contacted by the demo.
+- An optional in-page assistant using Sign in with ChatGPT for locally hosted open-source apps. Its OAuth credentials are encrypted per Shklops user. The assistant receives only the results of scoped, read-only finance functions and shows the inputs used for each answer.
 - Responsive desktop and mobile layouts. No external fonts, trackers, or CDNs are required.
 
 ## Run on your computer
@@ -37,7 +38,13 @@ After the first successful setup, `npm start` starts the built app without reins
 
 The HTTP server serves both the API and website on port **3002**. The web demo does not require Electron processes, a desktop keyring, a virtual display, or Chromium. Chromium is needed only for live browser-based bank scraping and the browser test suite.
 
-Choose **כניסה להדגמה עם נתונים לדוגמה** to explore immediately. To try MFA, open **חשבונות וכרטיסים**, sync **חשבון משותף · הדגמת אימות**, and enter `123456`. Any 4–10 digit code is accepted by the synthetic adapter; this does not validate a real OTP. The dialog labels that distinction.
+Choose **כניסה להדגמה עם נתונים לדוגמה** to explore immediately. To try MFA, open **הגדרות → חשבונות וכרטיסים**, sync **חשבון משותף · הדגמת אימות**, and enter `123456`. Any 4–10 digit code is accepted by the synthetic adapter; this does not validate a real OTP. The dialog labels that distinction.
+
+### Ask questions with ChatGPT
+
+Open **שאלו את שקלופס** and select **המשך עם ChatGPT**. The browser opens OpenAI's OAuth page and returns to the local website after authorization. An eligible ChatGPT plan and consent to plan usage are required; no API key is needed. The app displays the models available to that account. Its read-only tools can summarize a month, search transactions, and calculate the same future-month cash-flow scenario as the dashboard. Answers show the tool results for review.
+
+This integration is for the **locally hosted** app at `http://localhost:3002`. Keep the local server running during sign-in. OAuth tokens are stored encrypted in `.data/finance.sqlite` using `.data/credential.key`, not in browser storage or Git. The bank credentials are never passed to OpenAI. Questions, selected transaction details, and calculation results needed for an answer are sent to OpenAI. Use **ניתוק ChatGPT** on the assistant page to clear the local tokens and request remote revocation. A ChatGPT account connection is separate from the Shklops login. AI responses are not financial advice and may need checking against the displayed source data.
 
 To create a real application login, choose **חשבון חדש**, enter a name, email address, and password with at least 12 characters. This local implementation does not verify email addresses or provide password reset or account MFA. The production recommendation below replaces it with managed authentication.
 
@@ -92,7 +99,7 @@ before running these commands. On macOS with Homebrew Node installed, you can us
 `PATH=/opt/homebrew/bin:$PATH npm run start:live`.
 
 Open **http://localhost:3002**, reload an already-open page, and sign in or register
-a personal application account. Under **חשבונות וכרטיסים**, add your provider and
+a personal application account. Under **הגדרות → חשבונות וכרטיסים**, add your provider and
 connection name, then click its sync button to enter bank credentials. Alternatively,
 select the optional encrypted credential storage checkbox while adding the
 connection. Keep the page open for supported bank MFA challenges.

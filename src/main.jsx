@@ -33,6 +33,7 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
+  MessageCircle,
   Plus,
   RefreshCw,
   Search,
@@ -60,6 +61,7 @@ import "./style.css";
 const labels = {
   dashboard: "סקירה כללית",
   transactions: "תנועות",
+  assistant: "שאלו את שקלופס",
   settings: "הגדרות",
 };
 const colors = {
@@ -477,7 +479,7 @@ function App() {
     [live, setLive] = useState(false),
     [dataLoaded, setDataLoaded] = useState(false),
     [clockNow, setClockNow] = useState(() => Date.now());
-  const [page, setPage] = useState("dashboard"),
+  const [page, setPage] = useState(() => new URLSearchParams(window.location.search).has("ai") ? "assistant" : "dashboard"),
     [transactionsKind, setTransactionsKind] = useState("bank"),
     [data, setData] = useState({
       connections: [],
@@ -820,6 +822,7 @@ function App() {
           {[
             [LayoutDashboard, "dashboard"],
             [ArrowRight, "transactions"],
+            [MessageCircle, "assistant"],
             [Settings2, "settings"],
           ].map(([Icon, key]) => (
             <button
@@ -957,6 +960,8 @@ function App() {
                   ? "כל החשבונות, כל התנועות. קצת יותר סדר ביום שלכם."
                   : page === "transactions"
                     ? "כל ההוצאות וההכנסות, בלי לדלג בין אפליקציות."
+                  : page === "assistant"
+                    ? "שאלו על הנתונים שלכם וקבלו תשובה עם דרך החישוב."
                   : "כאן בוחרים איך המרחב שלכם עובד."}
               </p>
             </div>
@@ -970,7 +975,7 @@ function App() {
                   {hidden ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               )}
-              {page !== "settings" && (
+              {page !== "settings" && page !== "assistant" && (
                 <button
                   className="button primary"
                   onClick={syncAll}
@@ -1207,6 +1212,7 @@ function App() {
               onError={setError}
             />
           )}
+          {page === "assistant" && <AiAssistant userId={user.id} />}
           <footer className="main-footer">
             <span>
               <ShieldCheck size={14} /> המידע מוצג רק במרחב האישי שלכם
@@ -2738,6 +2744,155 @@ function MfaModal({ job, demo, connection, onSubmit, onCancel }) {
     </Modal>
   );
 }
+function AiAssistant({ userId }) {
+  const [status, setStatus] = useState(null);
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
+  const [question, setQuestion] = useState("");
+  const [turns, setTurns] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const result = new URLSearchParams(window.location.search).get("ai");
+    if (result) window.history.replaceState({}, "", window.location.pathname);
+    if (result === "error") setError("חיבור ChatGPT לא הושלם. נסו שוב ובדקו שאישרתם שימוש בתוכנית.");
+    api("/ai/status").then((value) => {
+      if (!active) return;
+      setStatus(value);
+      if (value.connected) return api("/ai/models").then((items) => {
+        if (active) { setModels(items); setModel(items[0]?.id || ""); }
+      });
+    }).catch((e) => active && setError(e.message));
+    return () => { active = false; };
+  }, [userId]);
+  async function connect(newAccount = false) {
+    setBusy(true);
+    setError("");
+    try {
+      const { url } = await api("/ai/connect", { method: "POST", body: { newAccount } });
+      window.location.assign(url);
+    } catch (e) { setError(e.message); setBusy(false); }
+  }
+  async function disconnect() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/ai/disconnect", { method: "POST", body: {} });
+      setStatus({ connected: false, email: status?.email });
+      setModels([]); setModel(""); setTurns([]);
+      if (!result.revoked) setError("החיבור המקומי נותק, אך לא התקבל אישור ביטול מ־ChatGPT. אפשר לנתק גם בהגדרות ChatGPT.");
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function ask(event) {
+    event.preventDefault();
+    const text = question.trim();
+    if (!text || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await api("/ai/ask", { method: "POST", body: {
+        question: text, model, history: turns.slice(-4).map(({ question, answer }) => ({ question, answer })),
+      } });
+      setTurns((previous) => [...previous, { question: text, ...response }]);
+      setQuestion("");
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <section className="panel ai-panel" aria-label="שאלו את שקלופס">
+    <div className="panel-heading">
+      <div><h2>שאלו את שקלופס</h2><p>שאלות על תנועות, הוצאות ותזרים — עם נתונים ודרך החישוב.</p></div>
+      <span className="little-icon"><MessageCircle size={20} /></span>
+    </div>
+    <div className="ai-body">
+      <div className="info-note"><ShieldCheck size={19} /><div>
+        <strong>השאלות והתוצאות שנדרשות לתשובה נשלחות ל־OpenAI</strong>
+        <p>פרטי הכניסה לבנק אינם נשלחים. החישובים נעשים בשרת Shklops, והמודל מקבל רק תוצאות של שאילתות קריאה מוגבלות.</p>
+      </div></div>
+      {status === null ? <Spinner /> : !status.connected ? <div className="ai-connect">
+        <Sparkles size={27} />
+        <h3>חברו את תוכנית ChatGPT שלכם</h3>
+        <p>החיבור נעשה בדפדפן דרך OpenAI. השימוש כפוף לזמינות ולמגבלות התוכנית שלכם.</p>
+        <button className="button primary" disabled={busy} onClick={() => connect()}>
+          {busy ? <Spinner /> : <ExternalLink size={17} />} המשך עם ChatGPT
+        </button>
+        {status.email && <button className="text-button" disabled={busy} onClick={() => connect(true)}>חיבור חשבון ChatGPT אחר</button>}
+      </div> : <>
+        <div className="ai-toolbar">
+          <span><CheckCircle2 size={16} /> מחובר ל־ChatGPT{status.email ? ` · ${status.email}` : ""}</span>
+          <label>מודל
+            <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="מודל ChatGPT">
+              {models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <button className="text-button" disabled={busy} onClick={disconnect}>ניתוק ChatGPT</button>
+        </div>
+        <div className="ai-turns" aria-live="polite">
+          {!turns.length && <div className="ai-suggestions">
+            <p>למשל:</p>
+            {["כמה הוצאתי בבנק החודש?", "מהם חיובי הכרטיסים הידועים לחודש הבא?", "איך חושבה תחזית התזרים לחודש הבא?"].map((sample) =>
+              <button key={sample} onClick={() => setQuestion(sample)}>{sample}</button>)}
+          </div>}
+          {turns.map((turn, index) => <div className="ai-turn" key={index}>
+            <div className="ai-question">{turn.question}</div>
+            <div className="ai-answer">{turn.answer}</div>
+            <details><summary>הנתונים ששימשו לתשובה</summary>
+              <AiSources sources={turn.sources} />
+            </details>
+          </div>)}
+        </div>
+        <form className="ai-form" onSubmit={ask}>
+          <input aria-label="השאלה שלכם" value={question} onChange={(event) => setQuestion(event.target.value)}
+            maxLength={1000} placeholder="מה תרצו לדעת על הכסף שלכם?" disabled={busy || !model} />
+          <button className="button primary" disabled={busy || !model || !question.trim()}>
+            {busy ? <Spinner /> : <ArrowLeft size={17} />} שליחה
+          </button>
+        </form>
+      </>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <small className="ai-usage">אפשר לבדוק ולנהל את מגבלת השימוש ב־<a href="https://chatgpt.com/#settings/Usage" target="_blank" rel="noreferrer">הגדרות ChatGPT</a>.</small>
+    </div>
+  </section>;
+}
+
+function AiSources({ sources }) {
+  const showMoney = (value, currency = "ILS") => value == null ? "לא ידוע" : shekel(Math.round(value * 100), currency);
+  return <div className="ai-sources">{sources.map(({ data }, index) => {
+    if (data.error) return <p key={index}>לא התקבלו נתונים עבור חלק מהבקשה.</p>;
+    const values = data.estimatedClosingBalance !== undefined ? [
+      ["יתרה נוכחית בבנק", data.openingBankBalance],
+      ["הכנסה חודשית", data.monthlyIncome],
+      ["משכנתא", data.recurringMortgage],
+      ["חיובי כרטיסים ידועים", data.knownCardCharges],
+      ["יתרה צפויה", data.estimatedClosingBalance],
+    ] : data.bankIncome !== undefined ? [
+      ["זיכויים בבנק", data.bankIncome], ["חיובים בבנק", data.bankExpenses],
+      ["תזרים נטו בבנק", data.bankNet], ["קניות בכרטיסי אשראי", data.cardPurchases],
+    ] : null;
+    return <div key={index}>
+      <strong>{data.month ? formatMonth(`${data.month}-01`) : `${data.start} – ${data.end}`}</strong>
+      {values && <dl>{values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><bdi>{showMoney(value)}</bdi></dd></div>)}</dl>}
+      {data.partial && <p>זהו אומדן חלקי לפי הנתונים הזמינים. חיובים נוספים עשויים לשנות אותו.</p>}
+      {data.cardBreakdown?.map((card, cardIndex) => <p key={cardIndex}>
+        כרטיס {card.card}: <bdi>{card.source === "unknown" ? "לא ידוע" : showMoney(card.amount)}</bdi>
+        {card.date ? ` · ${formatDate(card.date)}` : ""}
+      </p>)}
+      {data.transactions && <>
+        {data.completedTotals?.map((total, totalIndex) => <p key={totalIndex}>
+          {total.source === "bank" ? "בנק" : "כרטיסי אשראי"}: חיובים <bdi>{showMoney(total.debits, total.currency)}</bdi>
+          {" · "}זיכויים <bdi>{showMoney(total.credits, total.currency)}</bdi> · תנועות שהושלמו בלבד
+        </p>)}
+        <p>{data.truncated ? "מוצגות עד 30 תנועות תואמות." : `${data.totalMatches} תנועות תואמות`}</p>
+        <div className="ai-source-table"><table><thead><tr><th>תאריך</th><th>תיאור</th><th>חשבון / כרטיס</th><th>סכום</th></tr></thead>
+          <tbody>{data.transactions.map((transaction) => <tr key={transaction.id}>
+            <td>{formatDate(transaction.date)}</td><td>{transaction.description}</td><td>{transaction.cardOrAccount}</td>
+            <td><bdi>{showMoney(transaction.amount, transaction.currency)}</bdi></td>
+          </tr>)}</tbody></table></div>
+      </>}
+    </div>;
+  })}</div>;
+}
+
 function Settings({
   tab,
   setTab,
