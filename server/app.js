@@ -17,6 +17,7 @@ import { seedDemo } from "./demo.js";
 import { createJobs } from "./jobs.js";
 import { createAiAuth } from "./ai-auth.js";
 import { createAiChat } from "./ai-chat.js";
+import { createCategoryJobs } from "./category-jobs.js";
 import { normalizeCurrency } from "../shared/currency.js";
 const scrypt = promisify(scryptCallback);
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -70,6 +71,7 @@ export async function createApplication({
   const jobs = createJobs(store, jobsOptions);
   const aiAuth = createAiAuth(store, aiOptions);
   const aiChat = createAiChat(store, aiAuth, aiOptions);
+  const categoryJobs = createCategoryJobs(store, aiChat, aiAuth);
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet({ contentSecurityPolicy: development ? false : undefined }));
@@ -227,6 +229,11 @@ export async function createApplication({
         question: z.string().max(1000), answer: z.string().max(4000),
       }).strict()).max(4).optional() }).strict().parse(req.body);
     res.json(await aiChat.ask(req.user.id, question, model, history));
+  });
+  app.get("/api/ai/categorization", (req, res) => res.json(categoryJobs.status(req.user.id)));
+  app.post("/api/ai/categorization", aiLimit, (req, res) => {
+    const options = z.object({ refresh: z.boolean().optional(), model: z.string().max(100).optional() }).strict().parse(req.body);
+    res.status(202).json(categoryJobs.start(req.user.id, options));
   });
   app.get("/api/settings", (req, res) =>
     res.json({
@@ -461,6 +468,7 @@ export async function createApplication({
     close: async () => {
       jobs.shutdown();
       aiAuth.close();
+      categoryJobs.shutdown();
       await vite?.close();
       store.close();
     },

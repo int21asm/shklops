@@ -1177,6 +1177,8 @@ function App() {
               sourceKind={transactionsKind}
               data={data}
               providers={providerMap}
+              onDataChange={refresh}
+              onAiConnect={() => navigate("assistant")}
             />
           )}
           {page === "settings" && (
@@ -2053,6 +2055,73 @@ function UpcomingCardCharges({ data, providers, hidden, onViewAll }) {
   );
 }
 
+function CardCategoryControls({ onDataChange, onAiConnect }) {
+  const [status, setStatus] = useState(null);
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
+  const [refreshAll, setRefreshAll] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+  const refreshed = useRef("");
+  const refreshData = useRef(onDataChange);
+  refreshData.current = onDataChange;
+  useEffect(() => {
+    let mounted = true;
+    let checking = false;
+    async function load() {
+      if (checking) return;
+      checking = true;
+      try {
+        const value = await api("/ai/categorization");
+        if (!mounted) return;
+        setStatus(value);
+        const job = value.job;
+        if (job && ["completed", "failed"].includes(job.status) && job.updatedTransactions && refreshed.current !== job.id) {
+          await refreshData.current?.();
+          refreshed.current = job.id;
+        }
+      } catch (e) { if (mounted) setError(e.message); }
+      finally { checking = false; }
+    }
+    load();
+    api("/ai/status").then((value) => value.connected ? api("/ai/models") : [])
+      .then((items) => { if (mounted) { setModels(items); setModel(items[0]?.id || ""); } })
+      .catch((e) => mounted && setError(e.message));
+    const interval = setInterval(load, 1500);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+  const running = starting || status?.job?.status === "running";
+  async function categorize() {
+    setStarting(true); setError("");
+    try {
+      const job = await api("/ai/categorization", { method: "POST", body: { refresh: refreshAll, model } });
+      setStatus((previous) => ({ ...previous, job }));
+    } catch (e) { setError(e.message); }
+    finally { setStarting(false); }
+  }
+  return <div className="card-category-controls" aria-label="סיווג קטגוריות עם ChatGPT">
+    <div><strong><Sparkles size={16} /> קטגוריות עם ChatGPT</strong>
+      <p>הסיווג פועל רק בלחיצה. תיאורי בתי העסק נשלחים ל־OpenAI והקטגוריות נשמרות אצלכם.</p>
+      {status && <small>{status.pendingTransactions} תנועות ממתינות לסיווג מתוך {status.totalTransactions}
+        {status.lastCategorizedAt ? ` · סיווג אחרון: ${syncDateFormat.format(new Date(status.lastCategorizedAt))}` : ""}</small>}
+    </div>
+    {status?.connected ? <div className="card-category-actions">
+      <select value={model} onChange={(event) => setModel(event.target.value)} disabled={running} aria-label="מודל לסיווג קטגוריות">
+        {models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+      <label><input type="checkbox" checked={refreshAll} onChange={(event) => setRefreshAll(event.target.checked)} disabled={running} /> סיווג מחדש גם לתנועות שכבר סווגו</label>
+      <button className="button white" onClick={categorize} disabled={running || !model || !status.totalTransactions || (!refreshAll && !status.pendingTransactions)}>
+        {running ? <Spinner /> : <Sparkles size={16} />} {running ? "מסווגים…" : "סיווג קטגוריות"}
+      </button>
+    </div> : status && <button className="button white" onClick={onAiConnect}>חיבור ChatGPT לסיווג</button>}
+    {status?.job && <div className="card-category-progress" role="status">
+      {status.job.status === "running" ? `סווגו ${status.job.completedMerchants} מתוך ${status.job.totalMerchants} בתי עסק · עודכנו ${status.job.updatedTransactions} תנועות`
+        : status.job.status === "completed" ? `הסיווג הושלם · עודכנו ${status.job.updatedTransactions} תנועות` : status.job.error}
+    </div>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </div>;
+}
+
 function Transactions({
   data,
   providers,
@@ -2060,6 +2129,8 @@ function Transactions({
   hidden,
   onViewAll,
   sourceKind = "bank",
+  onDataChange,
+  onAiConnect,
 }) {
   const [search, setSearch] = useState(""),
     [kind, setKind] = useState(sourceKind),
@@ -2233,6 +2304,7 @@ function Transactions({
           ))}
         </div>
       )}
+      {!compact && kind === "card" && <CardCategoryControls onDataChange={onDataChange} onAiConnect={onAiConnect} />}
       {!compact && (
         <div className="transaction-filters">
           <div className="search-input">
@@ -2382,7 +2454,7 @@ function Transactions({
                       </div>
                     </td>
                     <td>
-                      <span className="category-pill">{t.category}</span>
+                      <span className="category-pill" title={t.category_source === "chatgpt" ? "סווג עם ChatGPT" : undefined}>{t.category}{t.category_source === "chatgpt" && <Sparkles size={10} />}</span>
                     </td>
                     <td>
                       <span

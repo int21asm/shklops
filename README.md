@@ -46,6 +46,12 @@ Open **שאלו את שקלופס** and select **המשך עם ChatGPT**. The br
 
 This integration is for the **locally hosted** app at `http://localhost:3002`. Keep the local server running during sign-in. OAuth tokens are stored encrypted in `.data/finance.sqlite` using `.data/credential.key`, not in browser storage or Git. The bank credentials are never passed to OpenAI. Questions, selected transaction details, and calculation results needed for an answer are sent to OpenAI. Use **ניתוק ChatGPT** on the assistant page to clear the local tokens and request remote revocation. A ChatGPT account connection is separate from the Shklops login. AI responses are not financial advice and may need checking against the displayed source data.
 
+### Categorize credit-card transactions
+
+Under **תנועות → תנועות אשראי**, use **סיווג קטגוריות** to classify completed transactions from selected cards with the connected ChatGPT account. This action is always manual: opening the page or syncing a card never starts AI classification. By default it handles only transactions not yet classified by ChatGPT, including transactions whose merchant description changed. Check **סיווג מחדש גם לתנועות שכבר סווגו** to refresh existing classifications too.
+
+Only merchant descriptions and temporary batch identifiers are sent for classification. Identical descriptions are grouped, processed in batches, and validated against a fixed Hebrew category list before saving. Categories, source model, and classification time are stored in SQLite and survive later bank syncs. Successful batches remain saved if a later batch fails; click the button again to handle remaining transactions. Projected installments inherit the category of their source transaction. The AI classifications are marked with a sparkle icon in the table.
+
 To create a real application login, choose **חשבון חדש**, enter a name, email address, and password with at least 12 characters. This local implementation does not verify email addresses or provide password reset or account MFA. The production recommendation below replaces it with managed authentication.
 
 ### Checks

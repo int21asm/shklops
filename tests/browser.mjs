@@ -95,6 +95,34 @@ try {
   assert.ok(
     !(await page.locator("tbody").textContent()).includes("בנק הפועלים"),
   );
+  await page.getByRole("tab", { name: "תנועות בנק" }).click();
+  let categoryJob = null;
+  const categoryRequests = [];
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { connected: true, email: "test@example.com" } }));
+  await page.route("**/api/ai/models", (route) => route.fulfill({ json: [{ id: "test-model", name: "Test model" }] }));
+  await page.route("**/api/ai/categorization", (route) => {
+    if (route.request().method() === "POST") {
+      categoryRequests.push(route.request().postDataJSON().refresh);
+      categoryJob = { id: `category-${categoryRequests.length}`, status: "completed", totalMerchants: 2, completedMerchants: 2, updatedTransactions: 3 };
+      return route.fulfill({ status: 202, json: categoryJob });
+    }
+    return route.fulfill({ json: { connected: true, totalTransactions: 3, pendingTransactions: categoryJob ? 0 : 3,
+      lastCategorizedAt: categoryJob ? new Date().toISOString() : null, job: categoryJob } });
+  });
+  await page.getByRole("tab", { name: "תנועות אשראי" }).click();
+  const categoryControls = page.getByLabel("סיווג קטגוריות עם ChatGPT", { exact: true });
+  await categoryControls.getByRole("button", { name: "סיווג קטגוריות", exact: true }).waitFor();
+  assert.equal(categoryRequests.length, 0, "opening the page never starts classification");
+  await categoryControls.getByRole("button", { name: "סיווג קטגוריות", exact: true }).click();
+  await categoryControls.getByRole("status").filter({ hasText: "הסיווג הושלם" }).waitFor();
+  await categoryControls.getByLabel("סיווג מחדש גם לתנועות שכבר סווגו").check();
+  await categoryControls.getByRole("button", { name: "סיווג קטגוריות", exact: true }).click();
+  assert.deepEqual(categoryRequests, [false, true]);
+  await page.screenshot({ path: "test-results/card-categorization-desktop.png", fullPage: true });
+  await page.unroute("**/api/ai/status");
+  await page.unroute("**/api/ai/models");
+  await page.unroute("**/api/ai/categorization");
+  console.log("PASS: credit-card categorization starts manually and supports explicit refresh");
   await page
     .locator("nav")
     .getByRole("button", { name: "סקירה כללית", exact: true })
