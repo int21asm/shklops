@@ -345,14 +345,6 @@ button .spin {
   margin-top: auto;
   padding-top: 30px;
 }
-.help-button {
-  border: 0;
-  background: none;
-  padding: 24px 10px 19px;
-  gap: 10px;
-  color: #9295a5;
-  font-size: 12px;
-}
 .profile {
   border-top: 1px solid var(--border);
   display: flex;
@@ -2280,15 +2272,6 @@ tbody tr:hover {
   color: #b4aabd;
   line-height: 1.9;
   gap: 4px;
-}
-.help-content p {
-  font-size: 12px;
-  line-height: 2;
-  color: #a394af;
-  margin: 17px 0;
-}
-.help-content .button {
-  margin-top: 15px;
 }
 .toast {
   position: fixed;

@@ -503,7 +503,6 @@ function App() {
     [period, setPeriod] = useState("month"),
     [forecastMonth, setForecastMonth] = useState(""),
     [hidden, setHidden] = useState(false),
-    [help, setHelp] = useState(false),
     [activity, setActivity] = useState(false);
   const statuses = useRef("");
   const currentUser = useRef(null);
@@ -832,9 +831,6 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button className="help-button" onClick={() => setHelp(true)}>
-            <CircleHelp size={18} /> עזרה ומידע
-          </button>
           <div className="profile">
             <span className="avatar">{user.name.slice(0, 1)}</span>
             <div>
@@ -1437,38 +1433,6 @@ function App() {
             )
           }
         />
-      )}
-      {help && (
-        <Modal
-          title="נעים להכיר, Shklops"
-          icon={CircleHelp}
-          subtitle="מרחב אחד שמרכז מידע פיננסי מבנקים וכרטיסי אשראי בישראל."
-          onClose={() => setHelp(false)}
-        >
-          <div className="help-content">
-            <p>
-              חברו חשבון, הפעילו סנכרון, וקבלו את התנועות בסקירה ובטבלה. כשסורק
-              הבנק תומך בכך, בקשת אימות תופיע אוטומטית ותאפשר להזין קוד.
-            </p>
-            <p>
-              אימות קוד זמין כרגע ב־ONE ZERO. בנקים אחרים עשויים לדרוש פעולה
-              באתר הבנק; האפליקציה תציג הודעת כישלון במקום להניח שהסנכרון הצליח.
-            </p>
-            <p>
-              האתר מבוסס על ספריית <b>israeli-bank-scrapers</b> ומושפע מפרויקט כספיון המקורי.
-              זהו פרויקט עצמאי, ללא שיוך לבנקים.
-            </p>
-            <button
-              className="button primary"
-              onClick={() => {
-                setHelp(false);
-                navigate("settings");
-              }}
-            >
-              להגדרות ואבטחה <ArrowLeft size={15} />
-            </button>
-          </div>
-        </Modal>
       )}
       {toast && (
         <div className="toast" role="status">
