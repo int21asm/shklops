@@ -1183,6 +1183,22 @@ button .spin {
   font-style: normal;
   color: #646173;
 }
+.spending-breakdown { grid-column: 1 / -1; margin: 0 20px 20px; border: 1px solid #e9e3f5; border-radius: 10px; overflow: hidden; background: #fdfcff; min-width: 0; }
+.spending-breakdown-heading { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid #eee8f7; }
+.spending-breakdown-heading > div { flex: 1; min-width: 0; }
+.spending-breakdown h3 { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.spending-breakdown h3 i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.spending-breakdown-heading p { margin: 5px 0 0; color: #9b90aa; font-size: 10px; }
+.spending-breakdown-heading > strong { font-size: 13px; color: #6c568f; white-space: nowrap; }
+.spending-breakdown-heading .icon-button { width: 26px; height: 26px; flex-shrink: 0; }
+.spending-breakdown ul { list-style: none; margin: 0; padding: 0; max-height: 270px; overflow-y: auto; overscroll-behavior: contain; }
+.spending-breakdown li { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #f0ebf7; font-size: 11px; }
+.spending-breakdown li:last-child { border-bottom: 0; }
+.spending-breakdown li > div { min-width: 0; }
+.spending-breakdown li strong { display: block; font-weight: 500; overflow-wrap: anywhere; }
+.spending-breakdown li small { display: block; margin-top: 5px; color: #a095ac; font-size: 9px; line-height: 1.5; }
+.spending-breakdown li > bdi { color: #6d6080; white-space: nowrap; }
+.spending-breakdown-note { margin: 0; padding: 9px 14px; color: #a095ac; border-top: 1px solid #eee8f7; font-size: 9px; line-height: 1.6; }
 .section-heading {
   display: flex;
   align-items: center;

@@ -1096,7 +1096,7 @@ function App() {
               </section>
               <div className="chart-grid">
                 <Cashflow transactions={bankTransactions} hidden={hidden} />
-                <Spending transactions={visibleCardCharges} hidden={hidden}
+                <Spending transactions={visibleCardCharges} hidden={hidden} providers={providerMap}
                   periodLabel={period === "month" ? formatMonth(currentMonthStart)
                     : `${formatDate(`${rangeStart}T12:00:00Z`)}–${formatDate(`${bankDate(new Date())}T12:00:00Z`)}`} />
               </div>
@@ -1830,19 +1830,23 @@ function RecurringPayments({ data, providers, hidden }) {
   </section>;
 }
 
-function Spending({ transactions, hidden, periodLabel }) {
+function Spending({ transactions, hidden, periodLabel, providers }) {
   const [activeName, setActiveName] = useState(null);
+  const [detailName, setDetailName] = useState(null);
   const tooltipId = useId();
+  const detailId = useId();
+  const closeDetails = () => { setActiveName(null); setDetailName(null); };
+  useEffect(closeDetails, [periodLabel]);
   const palette = ["#6955df", "#d87952", "#388eab", "#8c6dcc", "#58a58b", "#ce759f", "#9b87df", "#b19545", "#5f86c6", "#9c7188", "#59a4a6", "#b08a66", "#6679ae", "#80a55b", "#a18eae", "#b8b2c8"];
   const categoryColor = (name) => palette[(cardCategories.indexOf(name) + palette.length) % palette.length];
+  const categoryOf = (transaction) => transaction.category_source === "chatgpt" && transaction.category_description === transaction.description
+    ? transaction.category : "טרם סווג עם ChatGPT";
+  const charges = transactions.filter((transaction) => transaction.amount < 0 && transaction.currency === "ILS");
   const groups = {};
-  transactions
-    .filter((t) => t.amount < 0 && t.currency === "ILS")
-    .forEach((t) => {
-      const category = t.category_source === "chatgpt" && t.category_description === t.description
-        ? t.category : "טרם סווג עם ChatGPT";
-      groups[category] = (groups[category] || 0) - t.amount;
-    });
+  charges.forEach((t) => {
+    const category = categoryOf(t);
+    groups[category] = (groups[category] || 0) - t.amount;
+  });
   const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
   const total = sorted.reduce((s, x) => s + x[1], 0);
   const percentLabel = (value) => value / total < 0.001 ? "<0.1%"
@@ -1854,6 +1858,9 @@ function Spending({ transactions, hidden, periodLabel }) {
     return { name, value, start, percent: (value / total) * 100, color: categoryColor(name) };
   });
   const active = parts.find((part) => part.name === activeName);
+  const detail = parts.find((part) => part.name === detailName);
+  const detailTransactions = detail ? charges.filter((transaction) => categoryOf(transaction) === detail.name)
+    .sort((a, b) => (b.processed_date || b.date).localeCompare(a.processed_date || a.date) || b.date.localeCompare(a.date)) : [];
   const arcPath = (start, percent) => {
     if (percent >= 100) return "M 50 8 A 42 42 0 1 1 50 92 A 42 42 0 1 1 50 8";
     const point = (part) => {
@@ -1863,11 +1870,14 @@ function Spending({ transactions, hidden, periodLabel }) {
     return `M ${point(start)} A 42 42 0 ${percent > 50 ? 1 : 0} 1 ${point(start + percent)}`;
   };
   const interaction = (name) => ({
-    onPointerEnter: () => setActiveName(name), onPointerLeave: () => setActiveName(null),
-    onFocus: () => setActiveName(name), onBlur: () => setActiveName(null), onClick: () => setActiveName(name),
+    onPointerEnter: () => { setActiveName(name); setDetailName(name); }, onPointerLeave: () => setActiveName(null),
+    onFocus: () => { setActiveName(name); setDetailName(name); }, onBlur: () => setActiveName(null),
+    onClick: () => { setActiveName(name); setDetailName(name); },
     onKeyDown: (event) => {
       if (["Enter", " ", "Escape"].includes(event.key)) {
-        event.preventDefault(); setActiveName(event.key === "Escape" ? null : name);
+        event.preventDefault();
+        if (event.key === "Escape") closeDetails();
+        else { setActiveName(name); setDetailName(name); }
       }
     },
   });
@@ -1894,20 +1904,17 @@ function Spending({ transactions, hidden, periodLabel }) {
             <svg viewBox="0 0 100 100" role="group" aria-label="חלוקת חיובי האשראי לכל הקטגוריות">
               <circle cx="50" cy="50" r="42" className="donut-track" />
               {parts.map((part) => <path key={part.name} d={arcPath(part.start, part.percent)}
-                className={`donut-segment ${activeName === part.name ? "active" : ""}`}
+                className={`donut-segment ${activeName === part.name || detailName === part.name ? "active" : ""}`}
                 stroke={part.color} role="button" tabIndex={0}
                 aria-label={`${part.name} · ${percentLabel(part.value)}`} aria-describedby={activeName === part.name ? tooltipId : undefined}
+                aria-expanded={detailName === part.name} aria-controls={detail ? detailId : undefined}
                 data-category={part.name} data-start={part.start} data-percent={part.percent} data-amount={part.value} {...interaction(part.name)} />)}
             </svg>
-            <div className="donut-center" onClick={() => setActiveName(null)}>
+            <div className="donut-center" onClick={closeDetails}>
               <small>סך חיובי האשראי</small>
               <strong dir="ltr">{hidden ? "••••••" : shekel(total)}</strong>
               <span>
-                {
-                  transactions.filter(
-                    (t) => t.amount < 0 && t.currency === "ILS",
-                  ).length
-                }{" "}
+                {charges.length}{" "}
                 תנועות
               </span>
             </div>
@@ -1918,7 +1925,8 @@ function Spending({ transactions, hidden, periodLabel }) {
           </div>
           <div className="spending-legend">
             {parts.map(({ name, value, color }) => (
-              <div key={name} className={activeName === name ? "active" : ""} role="button" tabIndex={0}
+              <div key={name} className={activeName === name || detailName === name ? "active" : ""} role="button" tabIndex={0}
+                aria-expanded={detailName === name} aria-controls={detail ? detailId : undefined}
                 aria-label={`${name} · ${percentLabel(value)}`} aria-describedby={activeName === name ? tooltipId : undefined} {...interaction(name)}>
                 <span>
                   <i style={{ background: color }} />
@@ -1929,6 +1937,21 @@ function Spending({ transactions, hidden, periodLabel }) {
               </div>
             ))}
           </div>
+          {detail && <section className="spending-breakdown" id={detailId} aria-label={`תנועות שנכללו ב${detail.name}`}>
+            <div className="spending-breakdown-heading"><div>
+              <h3><i style={{ background: detail.color }} />{detail.name}</h3>
+              <p>{detailTransactions.length} חיובים · {periodLabel}</p>
+            </div><strong><bdi>{hidden ? "••••••" : shekel(detail.value)}</bdi></strong>
+              <button className="icon-button" aria-label="סגירת פירוט הקטגוריה" onClick={closeDetails}><X size={15} /></button>
+            </div>
+            <ul>{detailTransactions.map((transaction) => <li key={transaction.id} data-transaction-id={transaction.id} data-amount={-transaction.amount}>
+              <div><strong>{transaction.description}</strong>
+                <small>חיוב: {formatDate(`${transaction.processed_date || transaction.date}T12:00:00Z`)}{transaction.processed_date && transaction.processed_date !== transaction.date ? ` · עסקה: ${formatDate(`${transaction.date}T12:00:00Z`)}` : ""}</small>
+                <small>{providers[transaction.provider]?.name || transaction.provider} · ••{String(transaction.account_number || "").slice(-4)}{transaction.installment_number && transaction.installment_total ? ` · תשלום ${transaction.installment_number} מתוך ${transaction.installment_total}` : ""}</small>
+              </div><bdi>{hidden ? "••••••" : shekel(-transaction.amount)}</bdi>
+            </li>)}</ul>
+            <p className="spending-breakdown-note">אלה כל החיובים שנכללו בפרוסה זו, לפי מועד החיוב בתקופה המוצגת.</p>
+          </section>}
         </>
       )}
     </section>

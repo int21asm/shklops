@@ -60,6 +60,8 @@ Categories, short evidence explanations, self-reported confidence, verified sour
 
 The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. Every category has its own colored segment and legend entry. Hover, focus or tap a segment or legend row to see its category, percentage and amount; hidden-money mode conceals the amount. Small categories are not merged into an artificial “other” bucket.
 
+Hovering, focusing or tapping a category also opens its complete contributing transaction list below the chart. It uses exactly the same rows as the slice, with merchant descriptions, billing and purchase dates, provider/card suffixes, installment details and a matching category total. The list stays open when the pointer leaves the segment so it can be read and scrolled. Hover another category to switch it; use the close button, Escape or the center of the chart to dismiss it. Changing the dashboard period clears the old selection. Hidden-money mode masks amounts in the list and its total.
+
 The chart names its billing month/date range explicitly. Credit-card activity has a filtered summary for **all pages**, with the selected billing month and category, separate currency totals, and separate synced debits, credits, pending debits and projected installments. “This month” on the dashboard and “next payment” in activity select different billing months and can have different totals.
 
 ### Subscriptions and recurring payments
