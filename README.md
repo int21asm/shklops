@@ -52,6 +52,8 @@ Under **תנועות → תנועות אשראי**, use **סיווג קטגור�
 
 Only merchant descriptions and temporary batch identifiers are sent for classification. Identical descriptions are grouped, processed in batches, and validated against a fixed Hebrew category list before saving. Categories, source model, and classification time are stored in SQLite and survive later bank syncs. Successful batches remain saved if a later batch fails; click the button again to handle remaining transactions. Projected installments inherit the category of their source transaction. The AI classifications are marked with a sparkle icon in the table.
 
+The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. The four largest categories are shown separately and the rest are grouped as **אחר**.
+
 To create a real application login, choose **חשבון חדש**, enter a name, email address, and password with at least 12 characters. This local implementation does not verify email addresses or provide password reset or account MFA. The production recommendation below replaces it with managed authentication.
 
 ### Checks
@@ -161,7 +163,7 @@ The bank-MFA dialog is **not** application-login MFA. Adding a browser-visible O
   are shown as unavailable; partial ILS balance totals are labeled explicitly.
 - Provider availability changes with bank websites. A real success is reported only after the scraper returns a successful result and the import commits.
 - Most providers use bank transaction identifiers to deduplicate repeated imports. Mizrahi uses a content fingerprint because its reference numbers can change between syncs. Where identifiers are absent or unstable, date, amount, description, currency, installment, and occurrence preserve identical purchases but cannot perfectly reconcile changing bank descriptions or dates. Cross-provider transfers are not matched, so both sides remain visible.
-- Categories are simple Hebrew/text heuristics, not bank-certified classifications or an AI model.
+- Initial categories use simple Hebrew/text rules. Credit-card categories can be manually classified with ChatGPT; classifications may need review.
 - Amounts are stored in integer hundredths, suitable for ILS; there is no exchange-rate conversion or general accounting support for currencies with other minor-unit scales.
 - The UI fetches at most 10,000 latest transactions and explicitly warns when summaries/export cover a truncated dataset. A production implementation should move filtering, aggregation, and cursor pagination to Postgres.
 - No automatic schedules, exports to Google Sheets/YNAB, push notifications, account recovery, durable worker resume, or subscription billing are implemented.

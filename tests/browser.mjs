@@ -489,6 +489,12 @@ try {
     id: "synthetic-card-purchase",
     provider: "max",
     amount: -900000,
+    description: "SYNTHETIC_GROCERY",
+    processed_date: "2026-10-01",
+    status: "completed",
+    category: "מזון וקניות",
+    category_source: "chatgpt",
+    category_description: "SYNTHETIC_GROCERY",
   };
   const cardRefund = {
     ...bankCredit,
@@ -507,6 +513,13 @@ try {
     },
     cardPurchase,
     cardRefund,
+    { ...cardPurchase, id: "synthetic-card-transport", description: "SYNTHETIC_FUEL",
+      category_description: "SYNTHETIC_FUEL", category: "תחבורה", amount: -30000 },
+    { ...cardPurchase, id: "synthetic-card-unclassified", category_source: "rule", amount: -10000 },
+    { ...cardPurchase, id: "synthetic-card-future", processed_date: "2026-11-02", amount: -880000 },
+    { ...cardPurchase, id: "synthetic-card-prior-month", processed_date: "2026-09-02", amount: -20000 },
+    { ...cardPurchase, id: "synthetic-card-pending", status: "pending", amount: -770000 },
+    { ...cardPurchase, id: "synthetic-card-usd", currency: "USD", amount: -660000 },
   ];
   await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
   await page.reload();
@@ -530,11 +543,21 @@ try {
     );
   assert.equal(
     await page.locator(".spending .donut strong").textContent(),
-    formatMoney(2500),
+    formatMoney(940000),
   );
   assert.ok(
-    (await page.locator(".spending .donut").textContent()).includes("1 תנועות"),
+    (await page.locator(".spending .donut").textContent()).includes("3 תנועות"),
   );
+  assert.match(await page.locator(".spending .panel-heading p").textContent(), /קטגוריות ChatGPT.*מועד החיוב/);
+  const categoryLegend = page.locator(".spending-legend");
+  for (const [category, value] of [["מזון וקניות", 900000], ["תחבורה", 30000], ["טרם סווג עם ChatGPT", 10000]]) {
+    const row = categoryLegend.locator(":scope > div").filter({ hasText: category });
+    assert.equal(await row.locator("em").textContent(), formatMoney(value));
+  }
+  await page.getByLabel("תקופה", { exact: true }).selectOption("90");
+  assert.equal(await page.locator(".spending .donut strong").textContent(), formatMoney(960000));
+  await page.getByLabel("תקופה", { exact: true }).selectOption("month");
+  await page.screenshot({ path: "test-results/card-category-spending-desktop.png", fullPage: true });
   const cashflowLabel = await page
     .locator(".bar-group.current .bar-pair")
     .getAttribute("aria-label");
@@ -555,9 +578,12 @@ try {
         .textContent(),
       formatMoney(0),
     );
-  await page
-    .getByRole("heading", { name: "עוד אין הוצאות בתקופה הזו" })
-    .waitFor();
+  assert.equal(await page.locator(".spending .donut strong").textContent(), formatMoney(900000));
+  fixture.transactions = [{ ...bankCredit, amount: -2500 }];
+  await page.reload();
+  await page.getByRole("heading", { name: "עוד אין חיובי אשראי בתקופה הזו" }).waitFor();
+  fixture.transactions = [cardPurchase, cardRefund];
+  await page.reload();
   assert.equal(
     await page
       .getByRole("region", {
@@ -631,7 +657,7 @@ try {
   console.log("PASS: bank/card tabs filter billing months and show projected fourth and fifth installments without carrying them beyond completion");
   await page.unroute("**/api/data");
   console.log(
-    "PASS: income, expenses, net flow, cashflow chart, and category totals exclude card purchases/refunds while card transactions remain visible",
+    "PASS: bank metrics stay separate; spending uses saved ChatGPT card categories, billing dates, selected period, and completed ILS charges only",
   );
   await page.clock.setFixedTime(new Date("2026-10-21T10:00:00Z"));
   const originalSyncTimes = fixture.connections.map((connection) => connection.synced_at);

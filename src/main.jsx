@@ -658,6 +658,12 @@ function App() {
   const visibleTransactions = bankTransactions.filter(
     (t) => t.date >= rangeStart && t.date <= bankDate(new Date()),
   );
+  const visibleCardCharges = data.transactions.filter((t) => {
+    const date = t.processed_date || t.date;
+    return providerMap[t.provider]?.kind === "card" &&
+      t.status === "completed" && t.amount < 0 && t.currency === "ILS" &&
+      date >= rangeStart && date <= bankDate(new Date());
+  });
   const income = visibleTransactions
       .filter((t) => t.currency === "ILS" && t.amount > 0)
       .reduce((s, t) => s + t.amount, 0),
@@ -1088,7 +1094,7 @@ function App() {
               </section>
               <div className="chart-grid">
                 <Cashflow transactions={bankTransactions} hidden={hidden} />
-                <Spending transactions={visibleTransactions} hidden={hidden} />
+                <Spending transactions={visibleCardCharges} hidden={hidden} />
               </div>
               <CashflowForecast
                 bankBalance={balance}
@@ -1779,7 +1785,9 @@ function Spending({ transactions, hidden }) {
   transactions
     .filter((t) => t.amount < 0 && t.currency === "ILS")
     .forEach((t) => {
-      groups[t.category] = (groups[t.category] || 0) - t.amount;
+      const category = t.category_source === "chatgpt" && t.category_description === t.description
+        ? t.category : "טרם סווג עם ChatGPT";
+      groups[category] = (groups[category] || 0) - t.amount;
     });
   const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]),
     top = sorted.slice(0, 4);
@@ -1793,11 +1801,11 @@ function Spending({ transactions, hidden }) {
     return `${palette[i]} ${start}% ${offset}%`;
   });
   return (
-    <section className="panel spending">
+    <section className="panel spending" aria-label="הוצאות אשראי לפי קטגוריות">
       <div className="panel-heading">
         <div>
           <h2>לאן הכסף הולך?</h2>
-          <p>התפלגות ההוצאות בחשבונות הבנק בתקופה</p>
+          <p>חיובי אשראי בתקופה לפי קטגוריות ChatGPT · לפי מועד החיוב · שקלים</p>
         </div>
         <span className="little-icon">
           <ArrowUpLeft size={18} />
@@ -1806,8 +1814,8 @@ function Spending({ transactions, hidden }) {
       {!total ? (
         <Empty
           icon={SlidersHorizontal}
-          title="עוד אין הוצאות בתקופה הזו"
-          description="אחרי סנכרון, תראו כאן את החלוקה לקטגוריות."
+          title="עוד אין חיובי אשראי בתקופה הזו"
+          description="בחרו תקופה אחרת או סנכרנו כרטיסי אשראי. את הסיווג מפעילים בעמוד תנועות אשראי."
         />
       ) : (
         <>
@@ -1816,7 +1824,7 @@ function Spending({ transactions, hidden }) {
             style={{ background: `conic-gradient(${parts.join(",")})` }}
           >
             <div>
-              <small>סך ההוצאות</small>
+              <small>סך חיובי האשראי</small>
               <strong dir="ltr">{hidden ? "••••••" : shekel(total)}</strong>
               <span>
                 {
