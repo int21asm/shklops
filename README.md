@@ -60,6 +60,8 @@ Categories, short evidence explanations, self-reported confidence, verified sour
 
 The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. Every category has its own colored segment and legend entry. Hover, focus or tap a segment or legend row to see its category, percentage and amount; hidden-money mode conceals the amount. Small categories are not merged into an artificial “other” bucket.
 
+The chart names its billing month/date range explicitly. Credit-card activity has a filtered summary for **all pages**, with the selected billing month and category, separate currency totals, and separate synced debits, credits, pending debits and projected installments. “This month” on the dashboard and “next payment” in activity select different billing months and can have different totals.
+
 ### Subscriptions and recurring payments
 
 The dashboard's **מנויים וחיובים חוזרים** panel detects monthly, every-two-month and annual services from all loaded payment history. It runs locally without an AI call. It uses selected accounts, completed debits and merchant purchase dates, and keeps different accounts, currencies and merchant products separate. Installments, projected payments, refunds, pending/future transactions, mortgage/loan/transfer entries and bank card-settlement debits are excluded.

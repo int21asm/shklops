@@ -3622,6 +3622,13 @@ tbody tr:hover {
 .category-evidence p { margin: 0 0 7px; }
 .category-evidence small { display: block; color: #8b859c; }
 .category-evidence a { display: flex; align-items: center; gap: 4px; margin-top: 7px; color: #6955df; }
+.filtered-card-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 24px; border-top: 1px solid #eeebf5; background: #fcfbff; font-size: 12px; }
+.filtered-card-summary > div:first-child > small { display: block; color: #9a91ad; margin-top: 6px; }
+.filtered-card-totals { display: flex; gap: 14px; flex-wrap: wrap; }
+.filtered-card-totals > div { display: flex; flex-wrap: wrap; gap: 14px; }
+.filtered-card-totals span { color: #9b8eaf; }
+.filtered-card-totals bdi { display: inline-block; color: #5b4d74; font-weight: 600; margin-inline-start: 6px; }
+.filtered-card-totals .filtered-credits bdi { color: #36987b; }
 .recurring-panel { margin-top: 24px; }
 .recurring-panel h2 { display: flex; align-items: center; gap: 8px; }
 .recurring-panel .panel-heading > div:first-child { min-width: 0; flex: 1; }

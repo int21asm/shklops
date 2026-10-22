@@ -718,6 +718,10 @@ try {
   assert.match(await page.locator(".transactions tbody").textContent(), /FIVE_PAYMENT/);
   assert.match(await page.locator(".transactions tbody").textContent(), /תשלום 4 מתוך 5/);
   assert.match(await page.locator(".transactions tbody").textContent(), /צפוי · אומדן/);
+  const projectedSummary = page.getByRole("region", { name: "סיכום תנועות אשראי מסוננות", exact: true });
+  assert.equal(await projectedSummary.locator(".filtered-debits bdi").textContent(), formatMoney(0));
+  assert.match(await projectedSummary.textContent(), /תשלומים צפויים · אומדן/);
+  assert.ok((await projectedSummary.textContent()).includes(formatMoney(20617)));
   await installmentMonth.selectOption("2027-03");
   assert.match(await page.locator(".transactions tbody").textContent(), /תשלום 5 מתוך 5/);
   await installmentMonth.selectOption("2027-04");
@@ -729,6 +733,38 @@ try {
   console.log(
     "PASS: bank metrics stay separate; spending uses saved ChatGPT card categories, billing dates, selected period, and completed ILS charges only",
   );
+  const beforeBillingTransactions = fixture.transactions, beforeBillingAccounts = fixture.accounts;
+  const octoberTransport = [4493, 5586, 1600, 10632, 2402, 1360, 2000, 32500, 4240, 153400, 8633, 5177, 183300, 3370, 3000, 1500];
+  const novemberTransport = [3211, 4346, 7285, 5560, 1737];
+  fixture.accounts = fixture.accounts.map((account) => ({ ...account, next_charge_date: "2026-11-02" }));
+  fixture.transactions = [...octoberTransport.map((value, index) => ({ ...cardPurchase, id: `october-transport-${index}`,
+    amount: -value, category: "תחבורה", date: `2026-09-${String(28 - index).padStart(2, "0")}`, processed_date: "2026-10-02" })),
+    ...novemberTransport.map((value, index) => ({ ...cardPurchase, id: `november-transport-${index}`,
+      amount: -value, category: "תחבורה", date: `2026-10-${String(10 + index).padStart(2, "0")}`, processed_date: "2026-11-02" }))];
+  await page.clock.setFixedTime(new Date("2026-10-22T12:00:00Z"));
+  await page.route("**/api/data", (route) => route.fulfill({ json: fixture }));
+  await page.reload();
+  await page.locator(".spending .donut-center strong").filter({ hasText: formatMoney(423193) }).waitFor();
+  assert.match(await page.locator(".spending .panel-heading p").textContent(), /אוקטובר 2026/);
+  await page.locator("nav").getByRole("button", { name: "תנועות", exact: true }).click();
+  await page.getByRole("tab", { name: "תנועות אשראי" }).click();
+  await page.getByLabel("סינון לפי קטגוריה").selectOption("תחבורה");
+  await page.getByLabel("חודש חיוב בכרטיס").selectOption("2026-10");
+  const filteredCardSummary = page.getByRole("region", { name: "סיכום תנועות אשראי מסוננות", exact: true });
+  assert.match(await filteredCardSummary.textContent(), /16 תנועות בכל העמודים.*אוקטובר 2026/s);
+  assert.equal(await filteredCardSummary.locator(".filtered-debits bdi").textContent(), formatMoney(423193));
+  assert.equal(await page.locator(".transactions tbody tr").count(), 10);
+  await page.getByRole("button", { name: "עמוד הבא", exact: true }).click();
+  assert.equal(await page.locator(".transactions tbody tr").count(), 6);
+  assert.equal(await filteredCardSummary.locator(".filtered-debits bdi").textContent(), formatMoney(423193));
+  await page.getByLabel("חודש חיוב בכרטיס").selectOption("next");
+  assert.match(await filteredCardSummary.textContent(), /5 תנועות בכל העמודים.*נובמבר 2026/s);
+  assert.equal(await filteredCardSummary.locator(".filtered-debits bdi").textContent(), formatMoney(22139));
+  assert.equal(await page.locator(".transactions tbody tr").count(), 5);
+  await page.screenshot({ path: "test-results/card-billing-month-summary.png", fullPage: true });
+  fixture.transactions = beforeBillingTransactions; fixture.accounts = beforeBillingAccounts;
+  await page.unroute("**/api/data");
+  console.log("PASS: October chart and all 16 filtered October charges match 4,231.93; next November correctly shows 221.39 across five charges, independently of pagination");
   await page.clock.setFixedTime(new Date("2026-10-21T10:00:00Z"));
   const originalSyncTimes = fixture.connections.map((connection) => connection.synced_at);
   fixture.connections.forEach((connection) => { connection.synced_at = "2026-10-21T08:00:00Z"; });

@@ -1096,7 +1096,9 @@ function App() {
               </section>
               <div className="chart-grid">
                 <Cashflow transactions={bankTransactions} hidden={hidden} />
-                <Spending transactions={visibleCardCharges} hidden={hidden} />
+                <Spending transactions={visibleCardCharges} hidden={hidden}
+                  periodLabel={period === "month" ? formatMonth(currentMonthStart)
+                    : `${formatDate(`${rangeStart}T12:00:00Z`)}–${formatDate(`${bankDate(new Date())}T12:00:00Z`)}`} />
               </div>
               <CashflowForecast
                 bankBalance={balance}
@@ -1828,7 +1830,7 @@ function RecurringPayments({ data, providers, hidden }) {
   </section>;
 }
 
-function Spending({ transactions, hidden }) {
+function Spending({ transactions, hidden, periodLabel }) {
   const [activeName, setActiveName] = useState(null);
   const tooltipId = useId();
   const palette = ["#6955df", "#d87952", "#388eab", "#8c6dcc", "#58a58b", "#ce759f", "#9b87df", "#b19545", "#5f86c6", "#9c7188", "#59a4a6", "#b08a66", "#6679ae", "#80a55b", "#a18eae", "#b8b2c8"];
@@ -1874,7 +1876,7 @@ function Spending({ transactions, hidden }) {
       <div className="panel-heading">
         <div>
           <h2>לאן הכסף הולך?</h2>
-          <p>חיובי אשראי בתקופה לפי קטגוריות ChatGPT · לפי מועד החיוב · שקלים</p>
+          <p>חיובי אשראי · {periodLabel} · קטגוריות ChatGPT · לפי מועד החיוב · שקלים</p>
         </div>
         <span className="little-icon">
           <ArrowUpLeft size={18} />
@@ -2306,6 +2308,20 @@ function Transactions({
         }),
     [displayTransactions, search, connection, category, direction, sort, kind, selectedBillingMonth, compact],
   );
+  const filteredTotals = useMemo(() => {
+    const totals = new Map();
+    for (const transaction of filtered) {
+      const value = totals.get(transaction.currency) || { currency: transaction.currency, debits: 0, credits: 0, pending: 0, projected: 0 };
+      if (transaction.projected || transaction.status === "projected") value.projected += Math.max(0, -transaction.amount);
+      else if (transaction.status === "pending") value.pending += Math.max(0, -transaction.amount);
+      else if (transaction.status === "completed") {
+        value.debits += Math.max(0, -transaction.amount);
+        value.credits += Math.max(0, transaction.amount);
+      }
+      totals.set(transaction.currency, value);
+    }
+    return [...totals.values()];
+  }, [filtered]);
   useEffect(
     () => setPage(1),
     [search, connection, category, direction, sort, kind, billingMonth],
@@ -2475,6 +2491,17 @@ function Transactions({
           מוצגות תנועות עם תאריך חיוב מסונכרן ותשלומים עתידיים מחושבים. שורות המסומנות "צפוי" הן אומדן; הסכום והמועד עשויים להשתנות. תנועות בהמתנה או ללא תאריך חיוב אינן נכללות.
         </p>
       )}
+      {!compact && kind === "card" && <section className="filtered-card-summary" aria-label="סיכום תנועות אשראי מסוננות">
+        <div><strong>סיכום הסינון · {filtered.length} תנועות בכל העמודים</strong>
+          <small>{selectedBillingMonth && selectedBillingMonth !== "all" ? `חודש חיוב: ${formatMonth(`${selectedBillingMonth}-01`)}` : "כל מועדי החיוב"}{category !== "all" ? ` · ${category}` : ""}</small>
+        </div>
+        <div className="filtered-card-totals">{filteredTotals.map((total) => <div key={total.currency}>
+          <span className="filtered-debits">חיובים מסונכרנים <bdi>{hidden ? "••••••" : shekel(total.debits, total.currency)}</bdi></span>
+          {total.credits > 0 && <span className="filtered-credits">זיכויים <bdi>{hidden ? "••••••" : shekel(total.credits, total.currency)}</bdi></span>}
+          {total.pending > 0 && <span>חיובים בהמתנה <bdi>{hidden ? "••••••" : shekel(total.pending, total.currency)}</bdi></span>}
+          {total.projected > 0 && <span>תשלומים צפויים · אומדן <bdi>{hidden ? "••••••" : shekel(total.projected, total.currency)}</bdi></span>}
+        </div>)}</div>
+      </section>}
       {data.truncated && (
         <p className="warning-text">
           מוצגות 10,000 התנועות האחרונות מתוך{" "}
