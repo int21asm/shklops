@@ -63,6 +63,13 @@ export function createStore(directory) {
     db.exec("ALTER TABLE accounts ADD COLUMN next_charge INTEGER");
   if (!accountColumns.has("next_charge_date"))
     db.exec("ALTER TABLE accounts ADD COLUMN next_charge_date TEXT");
+  if (!accountColumns.has("enabled"))
+    db.exec("ALTER TABLE accounts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
+  const connectionColumns = new Set(
+    db.prepare("PRAGMA table_info(connections)").all().map((column) => column.name),
+  );
+  if (!connectionColumns.has("card_selection_configured"))
+    db.exec("ALTER TABLE connections ADD COLUMN card_selection_configured INTEGER NOT NULL DEFAULT 0");
   db.prepare(
     "UPDATE runs SET status='interrupted',error='השרת הופעל מחדש. ניתן לנסות שוב.' WHERE status IN ('queued','running','waiting_mfa')",
   ).run();
@@ -116,9 +123,10 @@ export function category(description = "") {
 
 export function importAccounts(store, connectionId, results) {
   const { db } = store;
-  const provider = db
-    .prepare("SELECT provider FROM connections WHERE id=?")
-    .get(connectionId)?.provider;
+  const connection = db
+    .prepare("SELECT provider,card_selection_configured FROM connections WHERE id=?")
+    .get(connectionId);
+  const provider = connection?.provider;
   let inserted = 0;
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -126,6 +134,8 @@ export function importAccounts(store, connectionId, results) {
       const currency = account.currency || "ILS";
       const number = String(account.accountNumber);
       const accountId = hash(`${connectionId}:${number}:${currency}`);
+      const existing = db.prepare("SELECT enabled FROM accounts WHERE id=?").get(accountId);
+      const enabled = existing ? Boolean(existing.enabled) : !connection?.card_selection_configured;
       const balance = Number.isFinite(account.balance)
         ? Math.round(account.balance * 100)
         : null;
@@ -138,16 +148,18 @@ export function importAccounts(store, connectionId, results) {
           ? bankDate(account.nextChargeDate)
           : null;
       db.prepare(
-        "INSERT INTO accounts(id,connection_id,number,currency,balance,next_charge,next_charge_date) VALUES(?,?,?,?,?,?,?) ON CONFLICT(connection_id,number,currency) DO UPDATE SET balance=excluded.balance,next_charge=excluded.next_charge,next_charge_date=excluded.next_charge_date",
+        "INSERT INTO accounts(id,connection_id,number,currency,balance,next_charge,next_charge_date,enabled) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,number,currency) DO UPDATE SET balance=excluded.balance,next_charge=excluded.next_charge,next_charge_date=excluded.next_charge_date",
       ).run(
         accountId,
         connectionId,
         number,
         currency,
-        balance,
-        nextCharge,
-        nextChargeDate,
+        enabled ? balance : null,
+        enabled ? nextCharge : null,
+        enabled ? nextChargeDate : null,
+        Number(enabled),
       );
+      if (!enabled) continue;
       const occurrences = new Map();
       const legacyOccurrences = new Map();
       for (const tx of account.txns || []) {

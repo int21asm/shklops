@@ -390,6 +390,47 @@ test("existing card currency symbols are normalized in API data without rewritin
   );
 });
 
+test("card selection removes excluded data and persists across later imports", async (t) => {
+  const { agent, store } = await setup(t);
+  const owner = agent();
+  await register(owner);
+  const { body: { id: connectionId } } = await post(owner, "/api/connections", {
+    provider: "visaCal", name: "Synthetic cards",
+  });
+  const card = (number) => ({
+    accountNumber: number, currency: "ILS", balance: -42,
+    txns: [{ identifier: `purchase-${number}`, date: "2026-10-10",
+      processedDate: "2026-11-10", chargedAmount: -21, chargedCurrency: "ILS",
+      description: "Synthetic purchase" }],
+  });
+  importAccounts(store, connectionId, [card("1111"), card("2222")]);
+  const original = (await owner.get("/api/data")).body;
+  const kept = original.accounts.find((account) => account.number === "1111");
+  const excluded = original.accounts.find((account) => account.number === "2222");
+  assert.equal(original.transactions.length, 2);
+  const other = agent();
+  await register(other, "other@example.com");
+  assert.equal((await other.patch(`/api/accounts/${excluded.id}`).set("Origin", origin).send({ enabled: false })).status, 404);
+  assert.equal((await owner.patch(`/api/accounts/${excluded.id}`).set("Origin", origin).send({ enabled: false })).status, 200);
+  let data = (await owner.get("/api/data")).body;
+  assert.equal(data.accounts.find((account) => account.id === excluded.id).enabled, false);
+  assert.equal(data.transactions.length, 1);
+  assert.equal(data.transactions[0].account_id, kept.id);
+  assert.equal(store.db.prepare("SELECT count(*) AS count FROM transactions WHERE account_id=?").get(excluded.id).count, 0);
+  importAccounts(store, connectionId, [card("1111"), card("2222"), card("3333")]);
+  data = (await owner.get("/api/data")).body;
+  assert.equal(data.accounts.find((account) => account.number === "3333").enabled, false,
+    "newly discovered cards require an explicit choice after the selection is configured");
+  assert.equal(data.transactions.length, 1);
+  assert.equal((await owner.patch(`/api/accounts/${excluded.id}`).set("Origin", origin).send({ enabled: true })).status, 200);
+  assert.equal((await owner.get("/api/data")).body.transactions.length, 1,
+    "enabling a card does not revive deleted transactions until the next sync");
+  importAccounts(store, connectionId, [card("1111"), card("2222")]);
+  data = (await owner.get("/api/data")).body;
+  assert.equal(data.transactions.length, 2);
+  assert.equal(data.accounts.find((account) => account.id === excluded.id).enabled, true);
+});
+
 test("resync corrects legacy Mizrahi dates without duplicating identified or identical identifier-less transactions", async (t) => {
   const { agent, store } = await setup(t);
   const a = agent();

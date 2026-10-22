@@ -674,7 +674,7 @@ try {
   const monthPicker = forecast.getByLabel("חודש התחזית");
   assert.equal(await monthPicker.inputValue(), "2026-11-01");
   const cardLine = forecast.locator(".forecast-line").filter({
-    hasText: "חיובי כרטיסים צפויים",
+    hasText: "חיובי כרטיסים",
   });
   assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-512825));
   assert.ok((await cardLine.textContent()).includes("02.11.2026"));
@@ -763,6 +763,19 @@ try {
   console.log(
     "PASS: Mizrahi header balance, genuine zero, iframe ledger fallback, and credit-limit exclusion",
   );
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  const maxCard = page.locator(".connection-grid .connection-card").filter({ hasText: "כרטיס האשראי שלי" });
+  const importChoice = maxCard.getByRole("checkbox", { name: "לייבא כרטיס זה" });
+  await importChoice.click();
+  await maxCard.getByText("לא מיובא").waitFor();
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  const disabledMaxCard = page.locator(".connection-grid .connection-card").filter({ hasText: "כרטיס האשראי שלי" });
+  assert.equal(await disabledMaxCard.getByRole("checkbox").isChecked(), false);
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  assert.ok(!(await page.locator(".recent-transactions").textContent()).includes("max"));
+  console.log("PASS: excluding a card persists and removes its activity from the dashboard");
   assert.deepEqual(errors, [], "Browser JavaScript exceptions");
   await context.close();
 } finally {

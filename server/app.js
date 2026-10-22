@@ -235,12 +235,12 @@ export async function createApplication({
       .all(req.user.id);
     const transactions = db
       .prepare(
-        "SELECT t.*,a.number AS account_number,a.connection_id,c.provider,c.name AS connection_name FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN connections c ON c.id=a.connection_id WHERE c.user_id=? ORDER BY t.date DESC,t.id DESC LIMIT 10000",
+        "SELECT t.*,a.number AS account_number,a.connection_id,c.provider,c.name AS connection_name FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN connections c ON c.id=a.connection_id WHERE c.user_id=? AND a.enabled=1 ORDER BY t.date DESC,t.id DESC LIMIT 10000",
       )
       .all(req.user.id);
     const total = db
       .prepare(
-        "SELECT count(*) AS count FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN connections c ON c.id=a.connection_id WHERE c.user_id=?",
+        "SELECT count(*) AS count FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN connections c ON c.id=a.connection_id WHERE c.user_id=? AND a.enabled=1",
       )
       .get(req.user.id).count;
     const runs = db
@@ -252,6 +252,7 @@ export async function createApplication({
       connections,
       accounts: accounts.map((account) => ({
         ...account,
+        enabled: Boolean(account.enabled),
         next_charge:
           account.next_charge ??
           (account.provider === "visaCal" && Number.isFinite(account.balance)
@@ -267,6 +268,31 @@ export async function createApplication({
       truncated: total > transactions.length,
       total,
     });
+  });
+  app.patch("/api/accounts/:id", (req, res) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(req.body);
+    const account = db.prepare(
+      "SELECT a.id,a.connection_id,a.number,c.provider FROM accounts a JOIN connections c ON c.id=a.connection_id WHERE a.id=? AND c.user_id=?",
+    ).get(req.params.id, req.user.id);
+    if (!account) return res.status(404).json({ error: "הכרטיס לא נמצא" });
+    if (providerById[account.provider]?.kind !== "card")
+      return res.status(400).json({ error: "ניתן לבחור ייבוא לכרטיסי אשראי בלבד" });
+    if (jobs.activeForConnection(account.connection_id))
+      return res.status(409).json({ error: "יש להמתין לסיום הסנכרון לפני שינוי בחירת הכרטיסים" });
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare("UPDATE connections SET card_selection_configured=1 WHERE id=?")
+        .run(account.connection_id);
+      db.prepare("UPDATE accounts SET enabled=?,balance=NULL,next_charge=NULL,next_charge_date=NULL WHERE connection_id=? AND number=?")
+        .run(Number(enabled), account.connection_id, account.number);
+      if (!enabled) db.prepare("DELETE FROM transactions WHERE account_id IN (SELECT id FROM accounts WHERE connection_id=? AND number=?)")
+        .run(account.connection_id, account.number);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    res.json({ enabled });
   });
   app.post("/api/connections", (req, res) => {
     const input = z

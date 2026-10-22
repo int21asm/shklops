@@ -495,7 +495,8 @@ function App() {
       monthlyCardEstimate: null,
       cardEstimatesByMonth: {},
     }),
-    [jobs, setJobs] = useState([]);
+    [jobs, setJobs] = useState([]),
+    [updatingCardId, setUpdatingCardId] = useState(null);
   const [error, setError] = useState(""),
     [toast, setToast] = useState(""),
     [modal, setModal] = useState(null),
@@ -647,6 +648,7 @@ function App() {
   );
   const cardAccounts = data.accounts.filter(
     (a) =>
+      a.enabled !== false &&
       a.currency === "ILS" &&
       providerMap[a.provider]?.kind === "card" &&
       !unavailableCardIds.has(a.connection_id),
@@ -740,6 +742,23 @@ function App() {
       startSync(connection).catch(() => {});
     } else {
       setModal({ type: "credentials", connection });
+    }
+  }
+  async function changeCardEnabled(account, enabled) {
+    setUpdatingCardId(account.id);
+    try {
+      await api(`/accounts/${account.id}`, {
+        method: "PATCH",
+        body: { enabled },
+      });
+      await refresh();
+      setToast(enabled
+        ? "הכרטיס נבחר. לחצו על סנכרון כדי לייבא את התנועות שלו."
+        : "הכרטיס הוסר מהייבוא והתנועות שלו נמחקו.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUpdatingCardId(null);
     }
   }
   async function logout() {
@@ -1194,6 +1213,9 @@ function App() {
                     providers={providerMap}
                     jobs={active}
                     lastRun={latestRuns.get(c.id)}
+                    showCardSelection
+                    updatingCardId={updatingCardId}
+                    onCardEnabledChange={changeCardEnabled}
                     onSync={() => requestConnectionSync(c)}
                     onDelete={() => setModal({ type: "delete", connection: c })}
                     onForget={
@@ -1846,8 +1868,12 @@ function ConnectionCard({
   onSync,
   onDelete,
   onForget,
+  showCardSelection = false,
+  onCardEnabledChange,
+  updatingCardId,
 }) {
-  const related = accounts.filter((a) => a.connection_id === c.id),
+  const related = accounts.filter((a) =>
+      a.connection_id === c.id && (showCardSelection || a.enabled !== false)),
     job = jobs.find((j) => j.connectionId === c.id),
     provider = providers[c.provider],
     failed = lastRun?.status === "failed" || (!lastRun && c.status === "failed");
@@ -1875,28 +1901,43 @@ function ConnectionCard({
           </span>
         )}
       </div>
+      {showCardSelection && provider?.kind === "card" && related.length > 0 && (
+        <p className="card-import-help">בחרו אילו כרטיסים לייבא. כיבוי מוחק את התנועות של הכרטיס.</p>
+      )}
       <div className="connection-value">
         {related.length ? (
           related.map((a) => {
+            const enabled = a.enabled !== false;
             const creditUsageCard = ["isracard", "amex"].includes(c.provider);
-            const payment = creditUsageCard
+            const payment = enabled && creditUsageCard
               ? nextKnownCardPayment(a, transactions, bankDate(new Date()))
               : null;
-            const displayedAmount = creditUsageCard ? payment?.amount : a.balance;
-            return <div key={a.id}>
+            const displayedAmount = enabled ? creditUsageCard ? payment?.amount : a.balance : null;
+            return <div key={a.id} className={enabled ? "" : "card-import-disabled"}>
               <span>
                 {provider?.kind === "card" ? "כרטיס אשראי" : "חשבון"}{" "}
                 <bdi>••{a.number.slice(-4)}</bdi>
               </span>
-              {creditUsageCard && <span>חיוב קרוב לפי תנועות שסונכרנו</span>}
+              {showCardSelection && provider?.kind === "card" && (
+                <label className="card-import-choice">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled={!!updatingCardId || !!job}
+                    onChange={(event) => onCardEnabledChange(a, event.target.checked)}
+                  />
+                  {enabled ? "לייבא כרטיס זה" : "לא לייבא כרטיס זה"}
+                </label>
+              )}
+              {creditUsageCard && enabled && <span>חיוב קרוב לפי תנועות שסונכרנו</span>}
               <strong dir="ltr">
-                {Number.isFinite(displayedAmount)
+                {!enabled ? "לא מיובא" : Number.isFinite(displayedAmount)
                   ? hidden
                     ? "••••••"
                     : shekel(displayedAmount, a.currency)
                   : "—"}
               </strong>
-              {creditUsageCard && (
+              {creditUsageCard && enabled && (
                 <span className="next-charge">
                   <CalendarDays size={12} />
                   {payment
@@ -1904,7 +1945,7 @@ function ConnectionCard({
                     : "אין חיוב עתידי מתוארך"}
                 </span>
               )}
-              {provider?.id === "visaCal" &&
+              {enabled && provider?.id === "visaCal" &&
                 Number.isFinite(a.next_charge) &&
                 (
                   <span className="next-charge">
@@ -1918,7 +1959,9 @@ function ConnectionCard({
           })
         ) : (
           <span className="no-account">
-            {failed ? "לא התקבלו נתונים מהסנכרון" : "מוכן לסנכרון הראשון"}
+            {accounts.some((a) => a.connection_id === c.id)
+              ? "לא נבחרו כרטיסים לייבוא"
+              : failed ? "לא התקבלו נתונים מהסנכרון" : "מוכן לסנכרון הראשון"}
           </span>
         )}
       </div>
