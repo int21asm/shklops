@@ -436,7 +436,14 @@ export async function createApplication({
       res.sendFile(path.join(root, "dist/index.html")),
     );
   }
-  app.use((error, _req, res, _next) => {
+  app.use((error, req, res, _next) => {
+    const requestId = randomUUID();
+    const frames = String(error.cause?.stack || error.stack || "").split("\n")
+      .filter((line) => /^\s+at\s/.test(line)).slice(0, 3);
+    console.error(JSON.stringify({ event: "request_failed", requestId,
+      route: req.route?.path || "unknown", method: req.method, status: error instanceof z.ZodError ? 400 : error.status || 500,
+      name: error.name, code: error.aiCode || null, stage: error.aiStage || null, frames }));
+    res.set("X-Request-Id", requestId);
     if (error instanceof z.ZodError)
       return res.status(400).json({
         error: "יש לבדוק את השדות ולנסות שוב",
@@ -444,6 +451,7 @@ export async function createApplication({
       });
     res.status(error.status || 500).json({
       error: error.status ? error.message : "אירעה שגיאה בשרת. נסו שוב.",
+      requestId,
     });
   });
   return {

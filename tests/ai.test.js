@@ -215,3 +215,54 @@ test("assistant executes bounded read-only tools and returns calculation sources
   assert.equal(result.sources[0].data.bankIncome, 10000);
   assert.equal(calls, 2);
 });
+
+test("OpenAI timeouts return a useful error and log no prompts or credentials", async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "shklops-ai-timeout-"));
+  const oldOrigin = process.env.APP_ORIGIN;
+  process.env.APP_ORIGIN = "http://localhost:3002";
+  const logs = [];
+  const originalLog = console.error;
+  console.error = (entry) => logs.push(entry);
+  const runtime = await createApplication({ dataDir: directory, aiOptions: { fetcher: async (url) => {
+    if (url.endsWith("/models")) return Response.json({ models: [{ slug: "test-model", visibility: "list" }] });
+    throw new DOMException("private-provider-details\nprivate-provider-extra", "TimeoutError");
+  } } });
+  t.after(async () => {
+    console.error = originalLog;
+    await runtime.close(); rmSync(directory, { recursive: true, force: true });
+    if (oldOrigin === undefined) delete process.env.APP_ORIGIN; else process.env.APP_ORIGIN = oldOrigin;
+  });
+  const user = request.agent(runtime.app);
+  const created = await user.post("/api/auth/demo").set("Origin", "http://localhost:3002").send({});
+  runtime.store.db.prepare("INSERT INTO ai_connections(user_id,client_id,subject,credentials,expires_at) VALUES(?,?,?,?,?)")
+    .run(created.body.user.id, "test-client", "test-subject", runtime.store.encrypt({ accessToken: "private-token", refreshToken: "private-refresh" }), Date.now() + 3600000);
+  const result = await user.post("/api/ai/ask").set("Origin", "http://localhost:3002")
+    .send({ question: "private-question-text", model: "test-model" });
+  assert.equal(result.status, 504);
+  assert.match(result.body.error, /ארכה יותר מדי זמן/);
+  assert.ok(result.body.requestId);
+  const logged = JSON.stringify(logs);
+  assert.match(logged, /request_timeout/);
+  assert.doesNotMatch(logged, /private-question|private-token|private-refresh|private-provider/);
+});
+
+test("monthly comparisons can execute more than four read-only queries in one response", async (t) => {
+  const store = fixture(t);
+  let round = 0;
+  const fetcher = async (url, options) => {
+    if (url.endsWith("/models")) return Response.json({ models: [{ slug: "test-model", visibility: "list" }] });
+    round++;
+    const input = JSON.parse(options.body).input;
+    if (round === 2) assert.equal(input.filter((item) => item.type === "function_call_output").length, 6);
+    const output = round === 1 ? Array.from({ length: 6 }, (_, index) => ({
+      type: "function_call", namespace: "finance", name: "month_summary", call_id: `call-${index}`,
+      arguments: JSON.stringify({ month: `2026-${String(index + 3).padStart(2, "0")}` }),
+    })) : [{ type: "message", content: [{ type: "output_text", text: "ההשוואה הושלמה" }] }];
+    const event = JSON.stringify({ type: "response.completed", response: { output } });
+    return new Response(`data: ${event}\n\n`);
+  };
+  const chat = createAiChat(store, { token: async () => "test-token" }, { fetcher });
+  const result = await chat.ask("alice", "תחשב כמה בספטמבר ואוגוסט", "test-model");
+  assert.equal(result.answer, "ההשוואה הושלמה");
+  assert.equal(result.sources.length, 6);
+});
