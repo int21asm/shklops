@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
 import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth, upcomingCardCharges } from "../shared/forecast.js";
+import { recurringPayments } from "../shared/recurring.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -1117,6 +1118,7 @@ function App() {
                 hidden={hidden}
                 onSettings={() => navigate("settings")}
               />
+              <RecurringPayments data={data} providers={providerMap} hidden={hidden} />
               <div className="accounts-section">
                 <div className="section-heading">
                   <div>
@@ -1779,6 +1781,52 @@ function Cashflow({ transactions, hidden }) {
     </section>
   );
 }
+function RecurringPayments({ data, providers, hidden }) {
+  const today = bankDate(new Date());
+  const recurring = useMemo(() => recurringPayments(data.transactions, data.accounts, providers, today), [data.transactions, data.accounts, providers, today]);
+  const shownMoney = (value, currency) => hidden ? "••••••" : shekel(value, currency);
+  const frequency = (months) => ({ 1: "חודשי", 2: "כל חודשיים", 12: "שנתי" })[months] || "טרם זוהתה";
+  function evidence(row) {
+    return <details className="recurring-evidence">
+      <summary>לפי {row.evidence.length} חיובים</summary>
+      <div>
+        <p>{row.months ? `החיובים האחרונים הופיעו בתדירות ${frequency(row.months)}. מועד החידוש והעלות הם אומדן לפי החיוב האחרון.`
+          : "אין מספיק חיובים במרווח קבוע כדי לקבוע תדירות. חיוב בודד אינו מוכיח מנוי שנתי."}</p>
+        {row.variable && <p>הסכום משתנה: {shownMoney(row.minAmount, row.currency)}–{shownMoney(row.maxAmount, row.currency)}. האומדן משתמש בחיוב האחרון.</p>}
+        <ul>{[...row.evidence].reverse().map((tx, index) => <li key={tx.id || index}><span>{formatDate(`${tx.date}T12:00:00Z`)}</span><bdi>{shownMoney(tx.amount, row.currency)}</bdi></li>)}</ul>
+      </div>
+    </details>;
+  }
+  function rowsTable(rows, uncertain = false) {
+    return <div className="table-scroll"><table className="recurring-table">
+      <thead><tr><th>בית עסק / שירות</th><th>תדירות</th><th>החיוב האחרון</th><th>עלות חודשית משוערת</th><th>החידוש הבא · אומדן</th><th>איך זוהה?</th></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.id}>
+        <td><strong>{row.description}</strong><small>{providers[row.account.provider]?.name || row.account.provider} · ••{row.account.number.slice(-4)}</small></td>
+        <td><span className={`recurring-frequency ${uncertain ? "uncertain" : ""}`}>{frequency(row.months)}</span></td>
+        <td><bdi>{shownMoney(row.amount, row.currency)}</bdi><small>{formatDate(`${row.lastDate}T12:00:00Z`)}</small></td>
+        <td><bdi>{row.monthlyAmount === null ? "—" : shownMoney(row.monthlyAmount, row.currency)}</bdi></td>
+        <td>{row.nextDate ? formatDate(`${row.nextDate}T12:00:00Z`) : "לא ידוע"}{row.overdue && <small className="recurring-overdue">טרם נראה חיוב נוסף</small>}</td>
+        <td>{evidence(row)}</td>
+      </tr>)}</tbody>
+    </table></div>;
+  }
+  return <section className="panel recurring-panel" aria-label="מנויים וחיובים חוזרים">
+    <div className="panel-heading"><div><h2><RefreshCw size={18} /> מנויים וחיובים חוזרים <span className="count">{recurring.detected.length}</span></h2>
+      <p>חודשי, כל חודשיים ושנתי · זיהוי מקומי לפי כל היסטוריית החיובים שסונכרנה</p></div>
+      <div className="recurring-total"><small>עלות חודשית משוערת</small>
+        {recurring.totals.length ? recurring.totals.map((total) => <strong key={total.currency}><bdi>{shownMoney(total.amount, total.currency)}</bdi></strong>) : <strong>—</strong>}
+      </div>
+    </div>
+    {recurring.detected.length ? rowsTable(recurring.detected) : <Empty icon={RefreshCw} title="עדיין לא זוהה דפוס של חיוב חוזר" description="הזיהוי דורש כמה חיובים במרווח קבוע. מנוי שנתי דורש שני חיובים בהפרש של כשנה; אפשר לסנכרן היסטוריה ארוכה יותר בהגדרות." />}
+    {!!recurring.candidates.length && <details className="recurring-review"><summary>{recurring.candidates.length} שירותים ללא תדירות מזוהה · לבדיקה</summary>
+      <p>חיובים שעשויים להיות מנויים או ביטוחים. אינם נכללים בעלות החודשית עד שיזוהה דפוס חוזר.</p>{rowsTable(recurring.candidates, true)}</details>}
+    {!!recurring.inactive.length && <details className="recurring-review inactive"><summary>{recurring.inactive.length} דפוסים קודמים ללא חידוש בזמן · אינם נכללים בסכום</summary>
+      <p>לא נמצא חיוב נוסף לאחר המועד הצפוי ותקופת חסד. ייתכן שהשירות הסתיים או שחסרה היסטוריה מסונכרנת.</p>{rowsTable(recurring.inactive)}</details>}
+    <p className="recurring-note">העלות החודשית היא החיוב האחרון חלקי מספר החודשים במחזור. עסקאות בתשלומים, החזרי כספים וחיובי הסליקה של הכרטיס בבנק אינם נכללים. האומדן אינו מתווסף לתחזית התזרים.</p>
+    {data.truncated && <p className="recurring-note">הזיהוי מתבסס על התנועות המוצגות בלבד; היסטוריה נוספת אינה כלולה בנתונים שנטענו.</p>}
+  </section>;
+}
+
 function Spending({ transactions, hidden }) {
   const palette = ["#6955df", "#9681f0", "#b7a5f3", "#d6caf7", "#e9e2fa"];
   const groups = {};
@@ -3077,7 +3125,7 @@ function Settings({
                     setDraft({ ...draft, daysBack: Number(e.target.value) })
                   }
                 >
-                  {[30, 60, 90, 180, 365].map((days) => (
+                  {[30, 60, 90, 180, 365, 730].map((days) => (
                     <option key={days} value={days}>
                       {days} ימים אחורה
                     </option>

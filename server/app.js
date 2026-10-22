@@ -35,7 +35,7 @@ const schema = z.object({
 });
 const settingsSchema = z
   .object({
-    daysBack: z.number().int().min(1).max(365),
+    daysBack: z.number().int().min(1).max(730),
     combineInstallments: z.boolean(),
     monthlyIncome: z.number().int().min(0).max(1_000_000_000).default(0),
     monthlyCardEstimate: z.number().int().min(0).max(1_000_000_000).nullable().default(null),

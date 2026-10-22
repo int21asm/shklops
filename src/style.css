@@ -3611,4 +3611,28 @@ tbody tr:hover {
 .category-evidence p { margin: 0 0 7px; }
 .category-evidence small { display: block; color: #8b859c; }
 .category-evidence a { display: flex; align-items: center; gap: 4px; margin-top: 7px; color: #6955df; }
+.recurring-panel { margin-top: 24px; }
+.recurring-panel h2 { display: flex; align-items: center; gap: 8px; }
+.recurring-panel .panel-heading > div:first-child { min-width: 0; flex: 1; }
+.recurring-total { text-align: left; flex-shrink: 0; }
+.recurring-total small { display: block; color: #9590a7; font-size: 11px; }
+.recurring-total strong { display: block; color: #6450bd; font-size: 24px; margin-top: 6px; }
+.recurring-table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; }
+.recurring-table th { background: #faf9fd; padding: 14px 20px; font-size: 11px; font-weight: 500; color: #9692a9; white-space: nowrap; }
+.recurring-table td { padding: 17px 20px; border-top: 1px solid #efedf7; vertical-align: top; }
+.recurring-table td:first-child { min-width: 155px; }
+.recurring-table td > small { display: block; font-size: 10px; color: #9994ac; margin-top: 6px; }
+.recurring-frequency { display: inline-block; white-space: nowrap; padding: 5px 8px; border-radius: 6px; background: #f0ecfc; color: #7962c5; font-size: 11px; }
+.recurring-frequency.uncertain { background: #faf4e9; color: #a4783a; }
+.recurring-table td > small.recurring-overdue { color: #b07a43; }
+.recurring-evidence { min-width: 100px; }
+.recurring-evidence summary { cursor: pointer; color: #7962c5; }
+.recurring-evidence > div { width: 220px; font-size: 11px; line-height: 1.7; white-space: normal; overflow-wrap: anywhere; }
+.recurring-evidence ul { padding: 0; list-style: none; max-height: 180px; overflow: auto; }
+.recurring-evidence li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.recurring-review { border-top: 1px solid #efedf7; }
+.recurring-review > summary { cursor: pointer; padding: 16px 24px; font-size: 12px; color: #8b7ca5; }
+.recurring-review > p, .recurring-note { color: #9993aa; font-size: 11px; line-height: 1.8; margin: 0; padding: 12px 24px; }
+.recurring-note { border-top: 1px solid #efedf7; }
+@media (max-width: 680px) { .recurring-panel .panel-heading { align-items: flex-start; gap: 16px; flex-wrap: wrap; } .recurring-panel .panel-heading > div:first-child { flex-basis: 190px; } .recurring-panel h2 { flex-wrap: wrap; } .recurring-total strong { font-size: 18px; } .recurring-panel .panel-heading p { max-width: 210px; line-height: 1.8; } .recurring-table { min-width: 830px; } }
 @media (max-width: 680px) { .card-category-controls { padding: 16px 18px; } .card-category-actions { width: 100%; } }

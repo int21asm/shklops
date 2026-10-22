@@ -143,13 +143,13 @@ try {
   console.log("PASS: Hebrew dashboard, persisted demo data and charts");
 
   await page.locator("nav").getByRole("button", { name: "הגדרות" }).click();
-  await page.getByLabel("טווח סנכרון").selectOption("30");
+  await page.getByLabel("טווח סנכרון").selectOption("730");
   await page.getByRole("switch", { name: "איחוד עסקאות בתשלומים" }).click();
   await page.getByRole("button", { name: "שמירת שינויים" }).click();
   await page.getByRole("status").filter({ hasText: "ההעדפות נשמרו" }).waitFor();
   await page.reload();
   await page.locator("nav").getByRole("button", { name: "הגדרות" }).click();
-  assert.equal(await page.getByLabel("טווח סנכרון").inputValue(), "30");
+  assert.equal(await page.getByLabel("טווח סנכרון").inputValue(), "730");
   assert.equal(
     await page.getByRole("switch").getAttribute("aria-checked"),
     "true",
@@ -887,6 +887,52 @@ try {
   console.log(
     "PASS: Mizrahi header balance, genuine zero, iframe ledger fallback, and credit-limit exclusion",
   );
+  const recurringFixture = await page.evaluate(() => fetch("/api/data").then((response) => response.json()));
+  const recurringCard = recurringFixture.accounts.find((account) => account.provider === "max");
+  const recurringBank = recurringFixture.accounts.find((account) => account.provider === "hapoalim");
+  let recurringId = 0;
+  const recurringTx = (description, date, amount, extra = {}) => ({
+    id: `recurring-${++recurringId}`, account_id: recurringCard.id, provider: "max", account_number: recurringCard.number,
+    description, date, processed_date: date, amount: -amount, currency: "ILS", status: "completed", category: "מנויים", ...extra,
+  });
+  recurringFixture.transactions = [
+    ...["2026-08-10", "2026-09-10", "2026-10-10"].map((date) => recurringTx("OPENAI CHATGPT", date, 7580)),
+    ...["2026-08-13", "2026-09-13", "2026-10-13"].map((date) => recurringTx("פרי טיוי", date, 3990)),
+    ...["2026-06-05", "2026-08-05", "2026-10-05"].map((date) => recurringTx("חברת החשמל", date, 60000, { account_id: recurringBank.id, provider: "hapoalim", category: "בית וחשבונות" })),
+    ...["2025-10-20", "2026-10-20"].map((date) => recurringTx("ביטוח דירה שנתי", date, 120000, { category: "ביטוח ופיננסים" })),
+    recurringTx("GOOGLE GOOGLE ONE", "2026-10-02", 8000),
+    ...["2026-08-18", "2026-09-18", "2026-10-18"].map((date) => recurringTx("NETFLIX_INSTALLMENT", date, 5000, { installment_total: 12, installment_number: 3 })),
+  ];
+  await page.clock.setFixedTime(new Date("2026-10-22T12:00:00Z"));
+  await page.route("**/api/data", (route) => route.fulfill({ json: recurringFixture }));
+  await page.reload();
+  const recurringPanel = page.getByRole("region", { name: "מנויים וחיובים חוזרים", exact: true });
+  await recurringPanel.locator(".recurring-total strong").filter({ hasText: formatMoney(51570) }).waitFor();
+  assert.equal(await recurringPanel.locator(".recurring-total strong").textContent(), formatMoney(51570));
+  assert.equal(await recurringPanel.locator(":scope > .table-scroll tbody tr").count(), 4);
+  const annualRow = recurringPanel.locator("tbody tr").filter({ hasText: "ביטוח דירה שנתי" });
+  assert.match(await annualRow.textContent(), /שנתי/);
+  assert.ok((await annualRow.textContent()).includes(formatMoney(10000)));
+  assert.doesNotMatch(await recurringPanel.textContent(), /NETFLIX_INSTALLMENT/);
+  const openAiRow = recurringPanel.locator("tbody tr").filter({ hasText: "OPENAI CHATGPT" });
+  await openAiRow.getByText("לפי 3 חיובים", { exact: true }).click();
+  assert.equal(await openAiRow.locator(".recurring-evidence li").count(), 3);
+  await recurringPanel.getByText("1 שירותים ללא תדירות מזוהה · לבדיקה", { exact: true }).click();
+  assert.match(await recurringPanel.locator(".recurring-review").first().textContent(), /GOOGLE GOOGLE ONE.*טרם זוהתה/s);
+  await page.getByLabel("תקופה", { exact: true }).selectOption("month");
+  assert.equal(await recurringPanel.locator(".recurring-total strong").textContent(), formatMoney(51570), "recurrence uses the full history even when dashboard selects this month");
+  await recurringPanel.screenshot({ path: "test-results/recurring-payments-desktop.png", animations: "disabled" });
+  await page.getByRole("button", { name: "הסתרת סכומים", exact: true }).click();
+  assert.equal(await recurringPanel.locator(".recurring-total strong").textContent(), "••••••");
+  assert.ok(!(await openAiRow.textContent()).includes(formatMoney(7580)));
+  await page.getByRole("button", { name: "הצגת סכומים", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await recurringPanel.scrollIntoViewIfNeeded();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  await recurringPanel.screenshot({ path: "test-results/recurring-payments-mobile.png", animations: "disabled" });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.unroute("**/api/data");
+  console.log("PASS: recurring service panel shows monthly, two-month and yearly costs with evidence, excludes installments, separates unknown cadence, and masks amounts on mobile");
   await page.reload();
   await openAccounts(page);
   const maxCard = page.locator(".connection-grid .connection-card").filter({ hasText: "כרטיס האשראי שלי" });

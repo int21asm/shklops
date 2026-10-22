@@ -113,13 +113,15 @@ test("users cannot access each other’s accounts, transactions, credentials or 
     .put("/api/settings")
     .set("Origin", origin)
     .send({
-      daysBack: 30,
+      daysBack: 730,
       combineInstallments: true,
       monthlyCardEstimate: 250000,
       cardEstimatesByMonth: { "2026-12": 400000, "2027-01": 600000 },
     })
     .expect(200);
   assert.equal((await alice.get("/api/settings")).body.monthlyCardEstimate, 250000);
+  assert.equal((await alice.get("/api/settings")).body.daysBack, 730);
+  await alice.put("/api/settings").set("Origin", origin).send({ daysBack: 731, combineInstallments: true }).expect(400);
   assert.equal((await alice.get("/api/settings")).body.cardEstimatesByMonth["2026-12"], 400000);
   assert.equal((await bob.get("/api/settings")).body.daysBack, 90);
   assert.equal((await bob.get("/api/settings")).body.monthlyCardEstimate, null);

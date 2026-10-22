@@ -60,6 +60,18 @@ Categories, short evidence explanations, self-reported confidence, verified sour
 
 The dashboard's **לאן הכסף הולך?** chart uses these saved credit-card categories for the selected period, by billing date (purchase date when unavailable). It includes completed ILS debits through today; refunds, pending charges, and future bills are excluded. Transactions awaiting classification appear under **טרם סווג עם ChatGPT**. The four largest categories are shown separately and the rest are grouped as **אחר**.
 
+### Subscriptions and recurring payments
+
+The dashboard's **מנויים וחיובים חוזרים** panel detects monthly, every-two-month and annual services from all loaded payment history. It runs locally without an AI call. It uses selected accounts, completed debits and merchant purchase dates, and keeps different accounts, currencies and merchant products separate. Installments, projected payments, refunds, pending/future transactions, mortgage/loan/transfer entries and bank card-settlement debits are excluded.
+
+Known service names and existing category labels are hints; recurring dates provide the evidence. Known services need at least two matching charges; other category-based monthly/two-month patterns need at least three. Annual recurrence requires two charges approximately a year apart. A single insurance charge does not establish an annual renewal. Uncertain services appear separately and contribute nothing to the estimate. Older patterns without a new charge beyond a grace period appear separately as potentially ended or missing data.
+
+Each detected service shows frequency, last charge, estimated next renewal, monthly equivalent (last amount divided by months in the cycle), and expandable historical evidence. Variable amounts are marked in the evidence. Currency totals are separate; no exchange rate is assumed. The global dashboard period does not restrict recurrence history. These informational estimates are not added to the cashflow forecast, where existing card bills may already include them.
+
+Settings allow requesting up to **730 days** of history to help find annual renewals. Actual history availability depends on the bank/card provider; changing this preference does not start a sync automatically.
+
+Deferred feature ideas are saved in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 To create a real application login, choose **חשבון חדש**, enter a name, email address, and password with at least 12 characters. This local implementation does not verify email addresses or provide password reset or account MFA. The production recommendation below replaces it with managed authentication.
 
 ### Checks
