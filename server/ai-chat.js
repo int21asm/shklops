@@ -152,6 +152,7 @@ async function completedResponse(response) {
     throw Object.assign(new Error("ChatGPT לא השלים את הבקשה. נסו שוב."), { status: 502 });
   }
   let buffer = "", completed = null;
+  const outputItems = new Map();
   const decoder = new TextDecoder();
   for await (const chunk of response.body) {
     buffer += decoder.decode(chunk, { stream: true });
@@ -163,6 +164,8 @@ async function completedResponse(response) {
       const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
       if (!data || data === "[DONE]") continue;
       const item = JSON.parse(data);
+      if (item.type === "response.output_item.done" && item.item)
+        outputItems.set(item.output_index ?? outputItems.size, item.item);
       if (item.type === "response.failed" || item.type === "response.incomplete") {
         const limited = String(item.response?.error?.code || "").includes("usage_limit");
         throw Object.assign(new Error(limited
@@ -173,7 +176,10 @@ async function completedResponse(response) {
     }
   }
   if (!completed) throw Object.assign(new Error("החיבור ל־ChatGPT הסתיים לפני קבלת תשובה."), { status: 502 });
-  return completed;
+  // Subscription OAuth can complete with output: [] even though complete items
+  // were delivered earlier in the SSE stream. Keep those items for the tool loop.
+  return { ...completed, output: completed.output?.length ? completed.output
+    : [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item) };
 }
 
 export function createAiChat(store, auth, { fetcher = fetch } = {}) {

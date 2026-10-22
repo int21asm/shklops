@@ -200,11 +200,12 @@ test("assistant executes bounded read-only tools and returns calculation sources
     if (url.endsWith("/models")) return Response.json({ models: [{ slug: "test-model", display_name: "Test", visibility: "list" }] });
     if (url.endsWith("/responses")) {
       calls++;
-      const output = calls === 1
-        ? [{ type: "function_call", name: "finance.month_summary", call_id: "call-1", arguments: JSON.stringify({ month }) }]
-        : [{ type: "message", content: [{ type: "output_text", text: "הכנסה של 10,000 ₪" }] }];
-      const event = JSON.stringify({ type: "response.completed", response: { output } });
-      return new Response(`event: response.completed\r\ndata: ${event}\r\n\r\n`, { headers: { "Content-Type": "text/event-stream" } });
+      const item = calls === 1
+        ? { type: "function_call", namespace: "finance", name: "month_summary", call_id: "call-1", arguments: JSON.stringify({ month }) }
+        : { type: "message", content: [{ type: "output_text", text: "הכנסה של 10,000 ₪" }] };
+      const done = JSON.stringify({ type: "response.output_item.done", output_index: 0, item });
+      const event = JSON.stringify({ type: "response.completed", response: { output: [] } });
+      return new Response(`event: response.output_item.done\r\ndata: ${done}\r\n\r\nevent: response.completed\r\ndata: ${event}\r\n\r\n`, { headers: { "Content-Type": "text/event-stream" } });
     }
     throw new Error("Unexpected request");
   };
