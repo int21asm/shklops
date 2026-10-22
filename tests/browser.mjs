@@ -689,8 +689,12 @@ try {
   assert.ok((await cardLine.textContent()).includes("10.11.2026"));
   assert.equal(
     await forecast.locator(".forecast-result strong").textContent(),
-    formatMoney(720445),
+    formatMoney(993527),
   );
+  const openingLine = forecast.locator(".forecast-line").filter({ hasText: "יתרה נוכחית בחשבונות הבנק" });
+  assert.equal(await openingLine.locator("strong").textContent(), formatMoney(273082));
+  await openingLine.hover();
+  assert.match(await openingLine.locator(".forecast-tooltip:visible").textContent(), /נקודת הפתיחה לכל חודש/);
   const mortgageLine = forecast.locator(".forecast-line").filter({ hasText: "משכנתא חודשית" });
   await mortgageLine.hover();
   assert.match(await mortgageLine.locator(".forecast-tooltip:visible").textContent(), /רישום זהה נוסף לא נספר/);
@@ -698,7 +702,7 @@ try {
   await cardLine.hover();
   assert.match(await cardLine.locator(".forecast-tooltip:visible").textContent(), /חיוב מסונכרן/);
   await forecast.locator(".forecast-result").hover();
-  assert.match(await forecast.locator(".forecast-result .forecast-tooltip:visible").textContent(), /הכנסה חודשית.*פחות משכנתא.*פחות חיובי כרטיסים/s);
+  assert.match(await forecast.locator(".forecast-result .forecast-tooltip:visible").textContent(), /יתרה נוכחית בבנק.*הכנסה חודשית.*פחות משכנתא.*פחות חיובי כרטיסים/s);
   await monthPicker.selectOption("2026-12-01");
   await forecast.getByText("תרחיש חודשי ל־דצמבר 2026").waitFor();
   assert.equal(
@@ -713,20 +717,20 @@ try {
   assert.match(await cardLine.textContent(), /תשלומים ידועים בלבד/);
   assert.equal(
     await forecast.locator(".forecast-result strong").textContent(),
-    formatMoney(1083270),
+    formatMoney(1356352),
   );
   await monthPicker.selectOption("2027-01-01");
   assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-100000));
   assert.equal(
     await forecast.locator(".forecast-result strong").textContent(),
-    formatMoney(1133270),
+    formatMoney(1406352),
   );
   assert.equal(await forecast.getByRole("button", { name: "שמירת אומדן לחודש" }).count(), 0);
   fixture.accounts[2].next_charge_date = null;
   await page.reload();
   await forecast.getByText(/קניות חדשות אינן כלולות/).waitFor();
   assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-250000));
-  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(983270));
+  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(1256352));
   fixture.accounts[2].next_charge_date = "2026-11-10";
   fixture.connections.push({
     id: "synthetic-unavailable-card",
@@ -739,11 +743,11 @@ try {
   await page.reload();
   await forecast.getByText(/סכומים נוספים חסרים בגלל חיבור שלא סונכרן/).waitFor();
   assert.equal(await cardLine.locator("strong").textContent(), formatMoney(-512825));
-  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(720445));
+  assert.equal(await forecast.locator(".forecast-result strong").textContent(), formatMoney(993527));
   await page.unroute("**/api/settings");
   await page.unroute("**/api/data");
   console.log(
-    "PASS: real-number November, December, and January net cash flow uses month-specific known installments without copying the previous card bill",
+    "PASS: real-number November, December, and January closing balances use the current bank balance and month-specific card charges",
   );
   const balanceFixture = await context.newPage();
   await balanceFixture.setContent(

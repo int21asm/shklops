@@ -1,6 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardForecastForMonth, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, estimatedClosingBalance, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+
+test("closing balance adds the current bank balance once for every independently selected month", () => {
+  const base = { openingBalance: 192_140, income: 1_900_000, mortgage: 666_730 };
+  const cases = [
+    { month: "2026-11", cards: 1_276_107, expected: 149_303 },
+    { month: "2026-12", cards: 300_000, expected: 1_125_410 },
+    { month: "2027-01", cards: 100_000, expected: 1_325_410 },
+  ];
+  for (const scenario of cases) {
+    const result = estimatedClosingBalance({ ...base, cardPayments: scenario.cards, cardComplete: false });
+    assert.equal(result.amount, scenario.expected, scenario.month);
+    assert.equal(result.partial, true);
+    assert.equal(result.amount - base.openingBalance, result.net);
+  }
+  assert.equal(estimatedClosingBalance({ ...base, openingBalance: null,
+    cardPayments: 1_276_107, cardComplete: true }).amount, null);
+  assert.equal(estimatedClosingBalance({ ...base, cardPayments: 1_276_107,
+    cardComplete: true, bankComplete: false }).partial, true);
+});
 
 test("an identical Mizrahi mortgage row is counted once in each monthly forecast", () => {
   const base = {

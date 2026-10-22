@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
-import { cardForecastForMonth, monthlyCashflow, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -671,6 +671,10 @@ function App() {
     balance = accountsWithBalance.length
       ? accountsWithBalance.reduce((s, a) => s + a.balance, 0)
       : null;
+  const bankBalanceSources = accountsWithBalance.map((account) => ({
+    label: `${providerMap[account.provider]?.name || account.provider} ••${account.number.slice(-4)}`,
+    amount: account.balance,
+  }));
   function navigate(target, kind = "bank") {
     if (target === "transactions") setTransactionsKind(kind);
     setPage(target);
@@ -1103,6 +1107,9 @@ function App() {
                 <Spending transactions={visibleTransactions} hidden={hidden} />
               </div>
               <CashflowForecast
+                bankBalance={balance}
+                bankBalanceSources={bankBalanceSources}
+                missingBalances={missingBalances}
                 monthlyIncome={settings.monthlyIncome || 0}
                 mortgage={forecastMortgage}
                 mortgageEstimate={mortgageEstimate}
@@ -1519,6 +1526,9 @@ function Stat({ title, value, icon: Icon, hint, detail, featured, tone }) {
   );
 }
 function CashflowForecast({
+  bankBalance,
+  bankBalanceSources,
+  missingBalances,
   monthlyIncome,
   mortgage,
   mortgageEstimate,
@@ -1537,18 +1547,30 @@ function CashflowForecast({
   onSettings,
 }) {
   const missing = [];
+  if (bankBalance === null) missing.push("יתרה נוכחית בחשבון הבנק");
   if (!monthlyIncome) missing.push("הכנסה חודשית קבועה בהגדרות");
   if (mortgage === null)
     missing.push('חיוב "טפחות - לווים" בחודש הקודם');
   const ready = missing.length === 0;
-  const cashflow = monthlyCashflow({
+  const closing = estimatedClosingBalance({
+    openingBalance: bankBalance,
     income: ready ? monthlyIncome : null,
     mortgage,
     cardPayments,
     cardComplete: !forecastPartial,
+    bankComplete: missingBalances === 0,
   });
-  const projected = cashflow.amount;
+  const projected = closing.amount;
+  const estimatePartial = closing.partial;
   const shownMoney = (value) => hidden ? "••••••" : shekel(value);
+  const balanceExplanation = bankBalanceSources.length
+    ? [
+        ...bankBalanceSources.map((account) => `${account.label}: ${shownMoney(account.amount)}`),
+        `סך היתרות האחרונות שסונכרנו: ${shownMoney(bankBalance)}.`,
+        ...(missingBalances ? [`חסרה יתרה ב־${missingBalances} חשבונות בנק נוספים.`] : []),
+        "יתרה זו היא נקודת הפתיחה לכל חודש שנבחר; חודשים קודמים אינם נצברים.",
+      ]
+    : ["אין יתרה מסונכרנת לחשבון בנק בשקלים."];
   const mortgageExplanation = mortgageEstimate.entries.length
     ? [
         ...mortgageEstimate.entries.map((entry) =>
@@ -1575,10 +1597,11 @@ function CashflowForecast({
       ]
     : ["לא נבחרו כרטיסים עם חיוב ידוע לחודש זה."];
   const resultExplanation = [
+    `יתרה נוכחית בבנק: ${bankBalance === null ? "לא ידועה" : shownMoney(bankBalance)}`,
     `הכנסה חודשית: ${monthlyIncome ? shownMoney(monthlyIncome) : "לא הוגדרה"}`,
     `פחות משכנתא: ${mortgage === null ? "לא ידועה" : shownMoney(mortgage)}`,
     `פחות חיובי כרטיסים שזוהו: ${forecastPartial && cardPayments === 0 ? "לא ידועים" : shownMoney(cardPayments)}`,
-    `תוצאה ל־${formatMonth(selectedMonth)}: ${projected === null ? "לא ניתן לחשב" : shownMoney(projected)}${forecastPartial ? " · אומדן חלקי" : ""}`,
+    `יתרה צפויה בסוף ${formatMonth(selectedMonth)}: ${projected === null ? "לא ניתן לחשב" : shownMoney(projected)}${estimatePartial ? " · אומדן חלקי" : ""}`,
   ];
   return (
     <section className="panel forecast-panel" aria-label="תחזית תזרים">
@@ -1603,11 +1626,11 @@ function CashflowForecast({
         </div>
       </div>
       <div className="forecast-content">
-        <div className={`forecast-result ${forecastPartial ? "partial" : ""}`} tabIndex={0} aria-label="פירוט חישוב התזרים">
-          <span>{forecastPartial ? "תזרים לפי חיובים זמינים בלבד" : "תזרים נטו בחודש"} <CircleHelp className="forecast-help-icon" size={13} aria-hidden="true" /></span>
+        <div className={`forecast-result ${estimatePartial ? "partial" : ""}`} tabIndex={0} aria-label="פירוט חישוב היתרה הצפויה">
+          <span>{estimatePartial ? "יתרה צפויה לפי נתונים זמינים" : "יתרה צפויה בסוף החודש"} <CircleHelp className="forecast-help-icon" size={13} aria-hidden="true" /></span>
           <strong
             className={
-              projected === null || forecastPartial
+              projected === null || estimatePartial
                 ? ""
                 : projected < 0
                   ? "below-zero"
@@ -1623,16 +1646,22 @@ function CashflowForecast({
           </strong>
           <p>
             {ready
-              ? forecastPartial
-                ? projected === null
-                  ? "אין סכום חיוב עתידי ידוע לכרטיסים בחודש זה, ולכן לא ניתן לחשב תזרים אמין."
-                  : "תרחיש חלקי: חסר סכום חיוב מסונכרן לחלק מהכרטיסים. התזרים בפועל עלול להיות נמוך יותר."
-                : "הכנסה חודשית פחות משכנתא וחיובי כרטיסים לחודש שנבחר."
+              ? projected === null
+                ? "אין סכום חיוב עתידי ידוע לכרטיסים בחודש זה, ולכן לא ניתן לחשב יתרה צפויה אמינה."
+                : estimatePartial
+                  ? `אומדן חלקי: ${forecastPartial ? "חיוב הכרטיסים אינו מלא" : ""}${forecastPartial && missingBalances ? " · " : ""}${missingBalances ? "חסרה יתרה בחלק מחשבונות הבנק" : ""}. היתרה בפועל עשויה להיות שונה.`
+                  : "יתרת הבנק הנוכחית ועוד הכנסה חודשית, פחות משכנתא וחיובי כרטיסים לחודש שנבחר."
               : `כדי להציג תחזית, צריך להשלים: ${missing.join(" · ")}.`}
           </p>
           <ForecastTooltip items={resultExplanation} />
         </div>
         <div className="forecast-breakdown">
+          <ForecastLine
+            label="יתרה נוכחית בחשבונות הבנק"
+            value={bankBalance}
+            hidden={hidden}
+            explanation={balanceExplanation}
+          />
           <ForecastLine
             label="הכנסה חודשית קבועה"
             value={monthlyIncome || null}
@@ -1672,9 +1701,9 @@ function CashflowForecast({
       </div>
       <div className="forecast-footer">
         <span>
-          כל חודש מחושב בנפרד: הכנסה פחות משכנתא וחיובי כרטיסים של אותו חודש.
+          כל חודש מחושב בנפרד: יתרת הבנק הנוכחית ועוד הכנסה, פחות משכנתא וחיובי כרטיסים של אותו חודש.
           לחודשים ללא חיוב כולל מסונכרן נכללים רק חיובים עתידיים ותשלומים ידועים.
-          יתרת הבנק והוצאות אחרות אינן כלולות.
+          יתרת חודשי תחזית קודמים אינה נצברת; הוצאות אחרות אינן כלולות.
         </span>
         <button className="text-button" onClick={onSettings}>
           הגדרת הכנסה <ArrowLeft size={14} />

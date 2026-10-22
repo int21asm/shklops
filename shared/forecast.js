@@ -1,5 +1,5 @@
 // Amounts are integer agorot. This is a single-month cash-flow scenario,
-// independent of the current bank balance and of other selected months.
+// independent of other selected months.
 export function monthlyCashflow({ income, mortgage, cardPayments, cardComplete }) {
   if (!Number.isFinite(income) || !Number.isFinite(mortgage))
     return { amount: null, partial: !cardComplete };
@@ -8,6 +8,18 @@ export function monthlyCashflow({ income, mortgage, cardPayments, cardComplete }
   return {
     amount: income - mortgage - (cardPayments ?? 0),
     partial: !cardComplete,
+  };
+}
+
+// Each selected month starts from the latest bank balance. The monthly net
+// flow is not carried forward from any earlier forecast month.
+export function estimatedClosingBalance({ openingBalance, income, mortgage, cardPayments, cardComplete, bankComplete = true }) {
+  const net = monthlyCashflow({ income, mortgage, cardPayments, cardComplete });
+  return {
+    amount: Number.isFinite(openingBalance) && net.amount !== null
+      ? openingBalance + net.amount : null,
+    net: net.amount,
+    partial: net.partial || !bankComplete || !Number.isFinite(openingBalance),
   };
 }
 
