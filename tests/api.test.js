@@ -509,6 +509,57 @@ test("resync corrects legacy Mizrahi dates without duplicating identified or ide
   assert.equal(corrected.filter((tx) => tx.amount < 0).length, 2);
 });
 
+test("Mizrahi identifier changes do not double dashboard income or real identical purchases", async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "shklops-mizrahi-"));
+  let runtime = await createApplication({ dataDir: directory });
+  t.after(async () => {
+    await runtime.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const a = request.agent(runtime.app);
+  await register(a);
+  const { body: { id } } = await post(a, "/api/connections", {
+    provider: "mizrahi", name: "Synthetic bank",
+  });
+  const txns = [
+    { identifier: "salary", description: "Salary", chargedAmount: 19417.45 },
+    { identifier: "refund", description: "Refund", chargedAmount: 41.51 },
+    { identifier: "mortgage", description: "Mortgage", chargedAmount: -6662.30 },
+    { identifier: "purchase-1", description: "Coffee", chargedAmount: -10 },
+    { identifier: "purchase-2", description: "Coffee", chargedAmount: -10 },
+  ].map((tx) => ({ ...tx, date: "2026-10-01" }));
+  const account = { accountNumber: "test", currency: "ILS", balance: 1921.4, txns };
+  assert.equal(importAccounts(runtime.store, id, [account]), 5);
+  // Reproduce old keys derived from bank reference numbers, which changed
+  // before a later import of the same statement.
+  for (const row of runtime.store.db.prepare("SELECT id,account_id FROM transactions").all()) {
+    const fingerprint = hash(`old-bank-reference:${row.id}`);
+    runtime.store.db.prepare("UPDATE transactions SET id=?,fingerprint=? WHERE id=?")
+      .run(hash(`${row.account_id}:${fingerprint}`), fingerprint, row.id);
+  }
+  const laterAccount = { ...account, txns: [
+    ...txns,
+    { identifier: "new-purchase-1", date: "2026-10-15", description: "Lunch", chargedAmount: -12 },
+    { identifier: "new-purchase-2", date: "2026-10-15", description: "Lunch", chargedAmount: -12 },
+  ] };
+  assert.equal(importAccounts(runtime.store, id, [laterAccount]), 7);
+  assert.equal((await a.get("/api/data")).body.transactions.length, 12);
+  await runtime.close();
+  runtime = await createApplication({ dataDir: directory });
+  const reopened = request.agent(runtime.app);
+  assert.equal((await post(reopened, "/api/auth/login", {
+    email: "person@example.com", password: "correct horse battery staple",
+  })).status, 200);
+  const data = (await reopened.get("/api/data")).body;
+  assert.equal(data.transactions.length, 7);
+  assert.equal(data.total, 7);
+  assert.equal(data.transactions.filter((tx) => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0), 1945896);
+  assert.equal(data.transactions.filter((tx) => tx.description === "Coffee").length, 2);
+  assert.equal(data.transactions.filter((tx) => tx.description === "Lunch").length, 2);
+  assert.equal(importAccounts(runtime.store, id, [laterAccount]), 0);
+  assert.equal((await reopened.get("/api/data")).body.transactions.length, 7);
+});
+
 test("live scraping stays disabled by default and credentials are not accepted in that mode", async (t) => {
   const { agent, store } = await setup(t);
   const a = agent();

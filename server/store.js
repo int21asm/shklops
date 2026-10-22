@@ -70,6 +70,7 @@ export function createStore(directory) {
   );
   if (!connectionColumns.has("card_selection_configured"))
     db.exec("ALTER TABLE connections ADD COLUMN card_selection_configured INTEGER NOT NULL DEFAULT 0");
+  reconcileMizrahiTransactions(db);
   db.prepare(
     "UPDATE runs SET status='interrupted',error='השרת הופעל מחדש. ניתן לנסות שוב.' WHERE status IN ('queued','running','waiting_mfa')",
   ).run();
@@ -109,6 +110,100 @@ export function createStore(directory) {
 }
 
 export const hash = (value) => createHash("sha256").update(value).digest("hex");
+
+function mizrahiIdentity(row) {
+  return JSON.stringify([
+    row.date,
+    row.description,
+    row.amount,
+    row.currency,
+    row.installment_number || 0,
+  ]);
+}
+
+// Some Mizrahi reference numbers change between syncs. Older imports used
+// those numbers as keys, so a later sync could insert a second copy of nearly
+// every transaction in a month. Re-key by transaction content. When two
+// import batches clearly overlap, keep the larger multiplicity of each batch;
+// two genuinely identical purchases within one batch must remain two rows.
+function reconcileMizrahiTransactions(db) {
+  const rows = db.prepare(`
+    SELECT t.rowid AS rowid,t.* FROM transactions t
+    JOIN accounts a ON a.id=t.account_id
+    JOIN connections c ON c.id=a.connection_id
+    WHERE c.provider='mizrahi' ORDER BY t.rowid
+  `).all();
+  if (!rows.length) return;
+  const months = new Map();
+  for (const row of rows) {
+    const monthKey = `${row.account_id}:${row.date.slice(0, 7)}`;
+    if (!months.has(monthKey)) months.set(monthKey, new Map());
+    const groups = months.get(monthKey);
+    const identity = mizrahiIdentity(row);
+    if (!groups.has(identity)) groups.set(identity, []);
+    groups.get(identity).push(row);
+  }
+  const kept = [];
+  const removed = [];
+  for (const groups of months.values()) {
+    const monthRows = [...groups.values()].flat().sort((a, b) => Number(a.rowid - b.rowid));
+    const left = new Set();
+    const rightCounts = new Map([...groups].map(([key, group]) => [key, group.length]));
+    let bestSplit = null;
+    for (let i = 0; i < monthRows.length - 1; i++) {
+      const key = mizrahiIdentity(monthRows[i]);
+      left.add(key);
+      const remaining = rightCounts.get(key) - 1;
+      if (remaining) rightCounts.set(key, remaining);
+      else rightCounts.delete(key);
+      const overlap = [...left].filter((identity) => rightCounts.has(identity)).length;
+      const smallerBatch = Math.min(left.size, rightCounts.size);
+      const balance = Math.min(i + 1, monthRows.length - i - 1);
+      if (overlap >= 3 && overlap / smallerBatch >= 0.6 &&
+          (!bestSplit || overlap > bestSplit.overlap ||
+            (overlap === bestSplit.overlap && balance > bestSplit.balance)))
+        bestSplit = { rowid: monthRows[i].rowid, overlap, balance };
+    }
+    for (const group of groups.values()) {
+      if (!bestSplit) {
+        kept.push(...group);
+        continue;
+      }
+      const earlier = group.filter((row) => row.rowid <= bestSplit.rowid);
+      const later = group.filter((row) => row.rowid > bestSplit.rowid);
+      const winners = later.length >= earlier.length ? later : earlier;
+      kept.push(...winners);
+      removed.push(...group.filter((row) => !winners.includes(row)));
+    }
+  }
+  const occurrenceByIdentity = new Map();
+  const changed = [];
+  for (const row of kept) {
+    const identity = mizrahiIdentity(row);
+    const key = `${row.account_id}:${identity}`;
+    const occurrence = occurrenceByIdentity.get(key) || 0;
+    occurrenceByIdentity.set(key, occurrence + 1);
+    const fingerprint = hash(`${identity}:${occurrence}`);
+    const id = hash(`${row.account_id}:${fingerprint}`);
+    if (row.id !== id || row.fingerprint !== fingerprint)
+      changed.push({ rowid: row.rowid, id, fingerprint });
+  }
+  if (!removed.length && !changed.length) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const deleteRow = db.prepare("DELETE FROM transactions WHERE rowid=?");
+    for (const row of removed) deleteRow.run(row.rowid);
+    const rekey = db.prepare("UPDATE transactions SET id=?,fingerprint=? WHERE rowid=?");
+    for (const row of changed)
+      rekey.run(hash(`mizrahi-migration:${row.id}`), hash(`mizrahi-migration:${row.fingerprint}`), row.rowid);
+    for (const row of changed) rekey.run(row.id, row.fingerprint, row.rowid);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function category(description = "") {
   if (/שופרסל|רמי לוי|סופר|AM:PM|ויקטורי/i.test(description))
     return "מזון וקניות";
@@ -185,7 +280,7 @@ export function importAccounts(store, connectionId, results) {
           ? hash(`${accountId}:${tx.identifier}`) : null;
         // Status is deliberately excluded: pending transactions become completed.
         const identity =
-          tx.identifier != null
+          provider !== "mizrahi" && tx.identifier != null
             ? JSON.stringify([tx.identifier, tx.installments?.number || 0])
             : JSON.stringify([
                 date,
