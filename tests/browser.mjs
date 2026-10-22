@@ -307,6 +307,48 @@ try {
   fixture.connections.pop();
   fixture.runs.shift();
   console.log("PASS: failed Isracard sync explains the missing card on dashboard and account card");
+  const isracardConnection = {
+    id: "synthetic-isracard-payment",
+    provider: "isracard",
+    name: "כרטיס חיוב לבדיקה",
+    synced_at: "2026-10-21T08:00:00Z",
+    status: "completed",
+  };
+  fixture.connections.push(isracardConnection);
+  fixture.accounts.push(
+    { ...fixture.accounts[0], id: "synthetic-isracard-card", connection_id: isracardConnection.id,
+      provider: "isracard", number: "9999", currency: "ILS", balance: -327719,
+      next_charge: null, next_charge_date: null },
+    { ...fixture.accounts[0], id: "synthetic-isracard-no-bill", connection_id: isracardConnection.id,
+      provider: "isracard", number: "8888", currency: "ILS", balance: -1239192,
+      next_charge: null, next_charge_date: null },
+  );
+  fixture.transactions.push(
+    { ...fixture.transactions[0], id: "synthetic-isracard-charge-a", account_id: "synthetic-isracard-card",
+      connection_id: isracardConnection.id, provider: "isracard", processed_date: "2099-11-10",
+      currency: "ILS", status: "completed", amount: -12000 },
+    { ...fixture.transactions[0], id: "synthetic-isracard-charge-b", account_id: "synthetic-isracard-card",
+      connection_id: isracardConnection.id, provider: "isracard", processed_date: "2099-11-10",
+      currency: "ILS", status: "completed", amount: -5000 },
+    { ...fixture.transactions[0], id: "synthetic-isracard-refund", account_id: "synthetic-isracard-card",
+      connection_id: isracardConnection.id, provider: "isracard", processed_date: "2099-11-10",
+      currency: "ILS", status: "completed", amount: 1000 },
+    { ...fixture.transactions[0], id: "synthetic-isracard-later", account_id: "synthetic-isracard-card",
+      connection_id: isracardConnection.id, provider: "isracard", processed_date: "2099-12-10",
+      currency: "ILS", status: "completed", amount: -30000 },
+  );
+  await page.reload();
+  await page.locator("nav").getByRole("button", { name: /חשבונות וכרטיסים/ }).click();
+  const paymentCard = page.locator(".connection-card").filter({ hasText: "כרטיס חיוב לבדיקה" });
+  assert.equal(await paymentCard.locator(".connection-value > div").first().locator("strong").textContent(), formatMoney(16000));
+  assert.match(await paymentCard.textContent(), /אומדן חלקי/);
+  assert.equal(await paymentCard.locator(".connection-value > div").last().locator("strong").textContent(), "—");
+  assert.match(await paymentCard.textContent(), /אין חיוב עתידי מתוארך/);
+  fixture.connections.pop();
+  fixture.accounts.splice(-2);
+  fixture.transactions.splice(-4);
+  await page.locator("nav").getByRole("button", { name: "סקירה כללית", exact: true }).click();
+  console.log("PASS: Isracard cards show dated payment estimates, not credit-line usage");
   fixture.accounts = fixture.accounts.map((a) => ({ ...a, balance: null }));
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.reload();

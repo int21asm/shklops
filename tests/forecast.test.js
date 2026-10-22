@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardForecastForMonth, monthlyCashflow, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, monthlyCashflow, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
 
 test("three months use dated bills and remaining installments, without carrying the full bill", () => {
   const income = 1_900_000; // ₪19,000
@@ -66,4 +66,30 @@ test("a five-payment card purchase shows February and March after January's thir
     ...transactions,
     { ...base, id: "four", date: "2027-01-18", processed_date: "2027-02-02", installment_number: 4, amount: -20_610 },
   ], "2027-02"), [], "a synced fourth payment replaces the projection");
+});
+
+test("Isracard's credit-line usage is never mistaken for the next payment", () => {
+  const account = { id: "isracard-1", currency: "ILS", balance: -327_719, next_charge: null };
+  const tx = (id, date, amount, extra = {}) => ({
+    id, account_id: account.id, processed_date: date, amount,
+    currency: "ILS", status: "completed", ...extra,
+  });
+  const transactions = [
+    tx("past", "2026-10-10", -100_000),
+    tx("first", "2026-11-10", -12_000),
+    tx("second", "2026-11-10", -5_000),
+    tx("refund", "2026-11-10", 1_000),
+    tx("later", "2026-12-10", -20_000),
+    tx("pending", "2026-11-10", -90_000, { status: "pending" }),
+    tx("foreign", "2026-11-10", -50_000, { currency: "USD" }),
+    tx("other", "2026-11-10", -80_000, { account_id: "other-card" }),
+  ];
+  assert.deepEqual(nextKnownCardPayment(account, transactions, "2026-10-22"), {
+    amount: 16_000, date: "2026-11-10", estimated: true,
+  });
+  assert.equal(nextKnownCardPayment(account, [], "2026-10-22"), null,
+    "credit usage alone cannot establish a payment");
+  assert.deepEqual(nextKnownCardPayment({ ...account, next_charge: 18_000, next_charge_date: "2026-11-10" }, transactions, "2026-10-22"), {
+    amount: 18_000, date: "2026-11-10", estimated: false,
+  });
 });

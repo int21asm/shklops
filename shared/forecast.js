@@ -60,6 +60,43 @@ export function projectedInstallmentsForMonth(transactions, month) {
   });
 }
 
+// Isracard/Amex "balance" is credit-line usage, not an upcoming debit.
+// Show only a dated charge returned by the scraper or a clearly partial sum
+// of completed transactions for the earliest upcoming billing date.
+export function nextKnownCardPayment(account, transactions, today) {
+  if (
+    Number.isFinite(account.next_charge) &&
+    typeof account.next_charge_date === "string" &&
+    account.next_charge_date >= today
+  ) {
+    return {
+      amount: Math.max(0, account.next_charge),
+      date: account.next_charge_date,
+      estimated: false,
+    };
+  }
+  const upcoming = transactions.filter(
+    (tx) =>
+      tx.account_id === account.id &&
+      tx.status === "completed" &&
+      tx.currency === account.currency &&
+      Number.isFinite(tx.amount) &&
+      typeof tx.processed_date === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(tx.processed_date) &&
+      tx.processed_date >= today,
+  );
+  if (!upcoming.length) return null;
+  const date = upcoming.reduce(
+    (earliest, tx) =>
+      tx.processed_date < earliest ? tx.processed_date : earliest,
+    upcoming[0].processed_date,
+  );
+  const amount = upcoming
+    .filter((tx) => tx.processed_date === date)
+    .reduce((sum, tx) => sum - tx.amount, 0);
+  return { amount: Math.max(0, amount), date, estimated: true };
+}
+
 export function cardForecastForMonth(accounts, month, unavailableCards = false, transactions = []) {
   const monthKey = month.slice(0, 7);
   let amount = 0;

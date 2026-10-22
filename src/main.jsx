@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
-import { cardForecastForMonth, monthlyCashflow, projectedInstallmentsForMonth } from "../shared/forecast.js";
+import { cardForecastForMonth, monthlyCashflow, nextKnownCardPayment, projectedInstallmentsForMonth } from "../shared/forecast.js";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -1129,6 +1129,7 @@ function App() {
                       key={c.id}
                       connection={c}
                       accounts={data.accounts}
+                      transactions={data.transactions}
                       providers={providerMap}
                       jobs={active}
                       lastRun={latestRuns.get(c.id)}
@@ -1189,6 +1190,7 @@ function App() {
                     key={c.id}
                     connection={c}
                     accounts={data.accounts}
+                    transactions={data.transactions}
                     providers={providerMap}
                     jobs={active}
                     lastRun={latestRuns.get(c.id)}
@@ -1836,6 +1838,7 @@ function Spending({ transactions, hidden }) {
 function ConnectionCard({
   connection: c,
   accounts,
+  transactions,
   providers,
   jobs,
   lastRun,
@@ -1874,19 +1877,33 @@ function ConnectionCard({
       </div>
       <div className="connection-value">
         {related.length ? (
-          related.map((a) => (
-            <div key={a.id}>
+          related.map((a) => {
+            const creditUsageCard = ["isracard", "amex"].includes(c.provider);
+            const payment = creditUsageCard
+              ? nextKnownCardPayment(a, transactions, bankDate(new Date()))
+              : null;
+            const displayedAmount = creditUsageCard ? payment?.amount : a.balance;
+            return <div key={a.id}>
               <span>
                 {provider?.kind === "card" ? "כרטיס אשראי" : "חשבון"}{" "}
                 <bdi>••{a.number.slice(-4)}</bdi>
               </span>
+              {creditUsageCard && <span>חיוב קרוב לפי תנועות שסונכרנו</span>}
               <strong dir="ltr">
-                {a.balance !== null
+                {Number.isFinite(displayedAmount)
                   ? hidden
                     ? "••••••"
-                    : shekel(a.balance, a.currency)
+                    : shekel(displayedAmount, a.currency)
                   : "—"}
               </strong>
+              {creditUsageCard && (
+                <span className="next-charge">
+                  <CalendarDays size={12} />
+                  {payment
+                    ? `${payment.estimated ? "אומדן חלקי" : "חיוב מסונכרן"} · ${formatDate(`${payment.date}T12:00:00Z`)}`
+                    : "אין חיוב עתידי מתוארך"}
+                </span>
+              )}
               {provider?.id === "visaCal" &&
                 Number.isFinite(a.next_charge) &&
                 (
@@ -1897,8 +1914,8 @@ function ConnectionCard({
                       ` · ${formatDate(`${a.next_charge_date}T12:00:00`)}`}
                   </span>
                 )}
-            </div>
-          ))
+            </div>;
+          })
         ) : (
           <span className="no-account">
             {failed ? "לא התקבלו נתונים מהסנכרון" : "מוכן לסנכרון הראשון"}
