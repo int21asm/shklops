@@ -9,7 +9,7 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "start:live": "node --env-file-if-exists=.env start-live.mjs",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
-    "test:browser": "node tests/browser.mjs"
+    "test:browser": "node tests/browser.mjs && node tests/sankey-browser.mjs"
   },
   "engines": {
     "node": ">=22.22.2"

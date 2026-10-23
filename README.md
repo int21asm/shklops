@@ -9,6 +9,7 @@ A Hebrew, right-to-left personal finance website using the pinned MIT-licensed `
 - Registration and login, scrypt password hashes, HttpOnly session cookies, server-side session revocation, rate limits, and same-origin write checks.
 - Private connections, accounts, transactions, settings, and sync history for each user. Bank credentials never appear in API responses.
 - A dashboard with bank balances, income, expenses, category totals, six-month bank cash flow, upcoming charges from every selected card with a known total, and a selectable monthly closing-balance scenario. Each selected month independently starts with the current bank balance, adds one configured monthly net income, and subtracts one prior-month mortgage estimate plus card debits. A dated total card debit applies only to its billing month. Other months include only known future card charges and remaining installment payments, so an incomplete card bill is labeled partial. No prior month's total is copied forward. Other variable expenses are excluded.
+- A monthly Sankey diagram of actual bank credits and debits, with saved merchant categories explaining uniquely matched card settlements, explicit unmatched amounts, and contributing transactions on hover or tap.
 - Cal credit cards show the next debit amount and date when returned by the scraper. Isracard and Amex report credit-line usage as their balance, so their cards instead show an explicitly partial estimate from completed transactions with the nearest future billing date; cards without such transactions show an unknown upcoming amount. New purchases may change the final bill.
 - Separate searchable, filterable, paginated bank and credit-card transaction tabs with filtered CSV export. The card tab can show a selected billing month or the next payment; month filtering uses the synced billing date and excludes pending or undated transactions. Remaining payments of a synced installment purchase appear in their future billing months as clearly marked projections until actual rows are synced.
 - Provider-specific connection forms from the scraper library's metadata; optional AES-256-GCM encryption of remembered bank credentials. Without opt-in, credentials are used only for that run.
@@ -64,6 +65,16 @@ Hovering, focusing or tapping a category also opens its complete contributing tr
 
 The chart names its billing month/date range explicitly. Credit-card activity has a filtered summary for **all pages**, with the selected billing month and category, separate currency totals, and separate synced debits, credits, pending debits and projected installments. “This month” on the dashboard and “next payment” in activity select different billing months and can have different totals.
 
+### Monthly money-flow diagram
+
+The dashboard's **לאן הכסף זורם?** Sankey panel has its own month selector, defaulting to the current month. It shows completed ILS bank movements through today, using actual bank transaction dates. Ribbon widths share one proportional scale. It runs locally from saved data without calling ChatGPT or starting a sync.
+
+Bank credits flow into bank expenses, mortgage payments, card settlements and the period's surplus. When expenses exceed credits, a red calculated difference balances the diagram. Credits may include transfers, not just salary. The surplus is the month's net movement, not the current bank balance or verified savings; the deficit does not identify its funding source. Configured future income, forecasts and the opening balance are excluded.
+
+Card merchant categories explain a settlement only when a unique match exists: the same issuer, the exact net amount, and a billing date within four days of the bank posting. Matching can combine selected cards from one issuer on the same billing date. A bill cannot be reused across bank payments. Missing, ambiguous or mismatched detail appears as **פירוט כרטיסים שלא הותאם**, and still counts in bank expenses exactly once. Refunds reduce their own category; a match that would create a negative category stays unallocated. Categories awaiting ChatGPT classification are labeled explicitly. Card transactions explain the bank settlement and never become additional expenses.
+
+Hover, focus or tap a ribbon or label to see its amount, percentage of total flow, and contributing transactions below the graphic. The list remains open for reading; switch selections, close it, press Escape, or change months to clear it. Hidden-money mode masks amounts throughout the panel. On mobile, swipe horizontally through the diagram. The existing spending donut measures completed card debits and excludes refunds, so its totals can differ from this reconciled bank-payment view.
+
 ### Subscriptions and recurring payments
 
 The dashboard's **מנויים וחיובים חוזרים** panel detects monthly, every-two-month and annual services from all loaded payment history. It runs locally without an AI call. It uses selected accounts, completed debits and merchant purchase dates, and keeps different accounts, currencies and merchant products separate. Installments, projected payments, refunds, pending/future transactions, mortgage/loan/transfer entries and bank card-settlement debits are excluded.
@@ -74,7 +85,7 @@ Each detected service shows frequency, last charge, estimated next renewal, mont
 
 Settings allow requesting up to **730 days** of history to help find annual renewals. Actual history availability depends on the bank/card provider; changing this preference does not start a sync automatically.
 
-Deferred feature ideas are saved in [docs/ROADMAP.md](docs/ROADMAP.md).
+Feature notes are saved in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 To create a real application login, choose **חשבון חדש**, enter a name, email address, and password with at least 12 characters. This local implementation does not verify email addresses or provide password reset or account MFA. The production recommendation below replaces it with managed authentication.
 

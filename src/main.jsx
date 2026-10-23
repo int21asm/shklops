@@ -4,7 +4,8 @@ import { bankDate } from "../shared/calendar.js";
 import { formatMoney as shekel } from "../shared/currency.js";
 import { cardForecastForMonth, estimatedClosingBalance, mortgageEstimateForMonth, nextKnownCardPayment, projectedInstallmentsForMonth, upcomingCardCharges } from "../shared/forecast.js";
 import { recurringPayments } from "../shared/recurring.js";
-import { cardCategories } from "../shared/categories.js";
+import { cardCategoryColor } from "../shared/categories.js";
+import { MoneyFlow } from "./MoneyFlow.jsx";
 import {
   ArrowUpLeft,
   ArrowDownLeft,
@@ -1100,6 +1101,7 @@ function App() {
                   periodLabel={period === "month" ? formatMonth(currentMonthStart)
                     : `${formatDate(`${rangeStart}T12:00:00Z`)}–${formatDate(`${bankDate(new Date())}T12:00:00Z`)}`} />
               </div>
+              <MoneyFlow data={data} providers={providerMap} hidden={hidden} />
               <CashflowForecast
                 bankBalance={balance}
                 bankBalanceSources={bankBalanceSources}
@@ -1837,8 +1839,6 @@ function Spending({ transactions, hidden, periodLabel, providers }) {
   const detailId = useId();
   const closeDetails = () => { setActiveName(null); setDetailName(null); };
   useEffect(closeDetails, [periodLabel]);
-  const palette = ["#6955df", "#d87952", "#388eab", "#8c6dcc", "#58a58b", "#ce759f", "#9b87df", "#b19545", "#5f86c6", "#9c7188", "#59a4a6", "#b08a66", "#6679ae", "#80a55b", "#a18eae", "#b8b2c8"];
-  const categoryColor = (name) => palette[(cardCategories.indexOf(name) + palette.length) % palette.length];
   const categoryOf = (transaction) => transaction.category_source === "chatgpt" && transaction.category_description === transaction.description
     ? transaction.category : "טרם סווג עם ChatGPT";
   const charges = transactions.filter((transaction) => transaction.amount < 0 && transaction.currency === "ILS");
@@ -1855,7 +1855,7 @@ function Spending({ transactions, hidden, periodLabel, providers }) {
   const parts = sorted.map(([name, value]) => {
     const start = offset;
     offset += (value / (total || 1)) * 100;
-    return { name, value, start, percent: (value / total) * 100, color: categoryColor(name) };
+    return { name, value, start, percent: (value / total) * 100, color: cardCategoryColor(name) };
   });
   const active = parts.find((part) => part.name === activeName);
   const detail = parts.find((part) => part.name === detailName);
